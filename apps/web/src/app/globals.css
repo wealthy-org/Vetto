@@ -463,3 +463,143 @@ pre,
     padding-block: 64px;
   }
 }
+
+
+/* =========================================
+   VETTO CHARACTER
+========================================= */
+
+.vetto-character {
+  position: relative;
+  isolation: isolate;
+  aspect-ratio: 1;
+  margin-inline: auto;
+}
+
+.vetto-character__artwork {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  animation: vetto-character-float 6s ease-in-out infinite;
+}
+
+.vetto-character__aura {
+  position: absolute;
+  inset: 15%;
+  z-index: -1;
+  border-radius: 50%;
+  background: rgb(124 58 237 / 28%);
+  filter: blur(65px);
+  animation: vetto-character-aura 5s ease-in-out infinite;
+}
+
+.vetto-character__orbit {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 1;
+  border: 1px solid rgb(167 139 250 / 22%);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.vetto-character__orbit--outer {
+  width: 88%;
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%) rotateX(68deg) rotate(-20deg);
+}
+
+.vetto-character__orbit--inner {
+  width: 75%;
+  aspect-ratio: 1;
+  border-color: rgb(196 181 253 / 14%);
+  transform: translate(-50%, -50%) rotateX(68deg) rotate(45deg);
+}
+
+.vetto-character__base {
+  position: absolute;
+  bottom: 4%;
+  left: 50%;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 34%;
+  height: 8px;
+  border: 1px solid rgb(167 139 250 / 30%);
+  border-radius: 50%;
+  background: rgb(139 92 246 / 14%);
+  box-shadow: 0 0 28px rgb(139 92 246 / 25%);
+  transform: translateX(-50%);
+}
+
+.vetto-character__base span {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #c4b5fd;
+  box-shadow: 0 0 8px #a78bfa;
+}
+
+.vetto-character.is-animated .vetto-character__orbit--outer {
+  animation: vetto-orbit-rotate 24s linear infinite;
+}
+
+.vetto-character.is-animated .vetto-character__orbit--inner {
+  animation: vetto-orbit-reverse 18s linear infinite;
+}
+
+@keyframes vetto-character-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-12px);
+  }
+}
+
+@keyframes vetto-character-aura {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(0.92);
+  }
+
+  50% {
+    opacity: 0.9;
+    transform: scale(1.08);
+  }
+}
+
+@keyframes vetto-orbit-rotate {
+  from {
+    transform: translate(-50%, -50%) rotateX(68deg) rotate(-20deg);
+  }
+
+  to {
+    transform: translate(-50%, -50%) rotateX(68deg) rotate(340deg);
+  }
+}
+
+@keyframes vetto-orbit-reverse {
+  from {
+    transform: translate(-50%, -50%) rotateX(68deg) rotate(45deg);
+  }
+
+  to {
+    transform: translate(-50%, -50%) rotateX(68deg) rotate(-315deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vetto-character *,
+  .vetto-character::before,
+  .vetto-character::after {
+    animation: none !important;
+  }
+}
