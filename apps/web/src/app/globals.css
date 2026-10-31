@@ -1,26 +1,465 @@
+
 @import "tailwindcss";
 
+/* =========================================
+   VETTO DESIGN SYSTEM
+   Independent DeFi Banker
+========================================= */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: dark;
+
+  /* Background */
+  --background: #0a0a0c;
+  --background-deep: #070708;
+  --background-elevated: #0e0d13;
+
+  /* Surfaces */
+  --surface: #111114;
+  --surface-raised: #18181d;
+  --surface-hover: #202027;
+
+  /* Typography */
+  --foreground: #f5f5f7;
+  --foreground-muted: #a1a1aa;
+  --foreground-subtle: #71717a;
+
+  /* Brand */
+  --primary: #8b5cf6;
+  --primary-hover: #a78bfa;
+  --primary-strong: #7c3aed;
+  --primary-soft: rgb(139 92 246 / 12%);
+  --primary-glow: rgb(139 92 246 / 22%);
+
+  /* Status */
+  --success: #34d399;
+  --warning: #fbbf24;
+  --danger: #fb7185;
+
+  /* Borders */
+  --border: rgb(255 255 255 / 8%);
+  --border-strong: rgb(255 255 255 / 14%);
+  --border-primary: rgb(139 92 246 / 28%);
+
+  /* Font stacks: system fallbacks, no external font request */
+  --font-display: "Sora", "Inter", "Segoe UI", sans-serif;
+  --font-body: "Inter", "Segoe UI", Arial, sans-serif;
+  --font-code: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+
+  /* Layout */
+  --container-width: 1200px;
+  --navbar-height: 76px;
+
+  /* Motion */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-smooth: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+
+  --font-sans: var(--font-body);
+  --font-mono: var(--font-code);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* =========================================
+   RESET & BASE
+========================================= */
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: calc(var(--navbar-height) + 16px);
+  background: var(--background);
 }
 
 body {
+  min-height: 100vh;
+  margin: 0;
+  overflow-x: hidden;
+
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.6;
+
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body,
+button,
+input,
+textarea,
+select {
+  font-family: var(--font-body);
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button {
+  color: inherit;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+img,
+svg,
+video,
+canvas {
+  display: block;
+  max-width: 100%;
+}
+
+::selection {
+  background: rgb(139 92 246 / 35%);
+  color: #fff;
+}
+
+/* =========================================
+   TYPOGRAPHY
+========================================= */
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.04em;
+}
+
+p {
+  margin: 0;
+}
+
+code,
+pre,
+.font-mono {
+  font-family: var(--font-code);
+}
+
+.text-balance {
+  text-wrap: balance;
+}
+
+/* =========================================
+   LAYOUT UTILITIES
+========================================= */
+
+.container-main {
+  width: min(calc(100% - 48px), var(--container-width));
+  margin-inline: auto;
+}
+
+.section-padding {
+  padding-block: 120px;
+}
+
+.section-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+
+  color: var(--primary-hover);
+
+  font-family: var(--font-code);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.section-label::before {
+  width: 18px;
+  height: 1px;
+  background: currentColor;
+  content: "";
+}
+
+/* =========================================
+   SURFACES
+========================================= */
+
+.surface {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+}
+
+.surface-raised {
+  border: 1px solid var(--border-strong);
+  border-radius: 16px;
+  background: var(--surface-raised);
+}
+
+.glass {
+  border: 1px solid rgb(255 255 255 / 9%);
+  background: rgb(17 17 20 / 75%);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+.glass-primary {
+  border: 1px solid var(--border-primary);
+  background: rgb(20 16 32 / 72%);
+  box-shadow:
+    0 12px 48px rgb(0 0 0 / 20%),
+    inset 0 1px 0 rgb(255 255 255 / 4%);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+
+/* =========================================
+   BACKGROUND & AMBIENT EFFECTS
+========================================= */
+
+.ambient-background {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background:
+    radial-gradient(
+      ellipse at 50% -20%,
+      rgb(91 33 182 / 16%),
+      transparent 55%
+    ),
+    linear-gradient(
+      180deg,
+      var(--background-elevated) 0%,
+      var(--background) 55%,
+      var(--background-deep) 100%
+    );
+}
+
+.ambient-orb {
+  position: absolute;
+  z-index: -1;
+  pointer-events: none;
+  border-radius: 50%;
+  filter: blur(90px);
+  opacity: 0.5;
+}
+
+.ambient-orb-primary {
+  background: rgb(124 58 237 / 30%);
+}
+
+.ambient-orb-secondary {
+  background: rgb(79 70 229 / 20%);
+}
+
+.grid-background {
+  background-image:
+    linear-gradient(
+      rgb(255 255 255 / 3%) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      90deg,
+      rgb(255 255 255 / 3%) 1px,
+      transparent 1px
+    );
+  background-size: 60px 60px;
+}
+
+.grid-mask {
+  mask-image: linear-gradient(
+    to bottom,
+    black,
+    transparent 85%
+  );
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    black,
+    transparent 85%
+  );
+}
+
+/* =========================================
+   BRAND EFFECTS
+========================================= */
+
+.text-gradient {
+  background: linear-gradient(
+    110deg,
+    #ffffff 15%,
+    #c4b5fd 55%,
+    #8b5cf6 100%
+  );
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.glow-primary {
+  box-shadow:
+    0 0 40px rgb(139 92 246 / 12%),
+    0 0 100px rgb(139 92 246 / 5%);
+}
+
+.border-glow {
+  border: 1px solid rgb(167 139 250 / 30%);
+  box-shadow:
+    0 0 20px rgb(139 92 246 / 8%),
+    inset 0 0 20px rgb(139 92 246 / 3%);
+}
+
+/* =========================================
+   INTERACTION & MOTION
+========================================= */
+
+.hover-lift {
+  transition:
+    transform 300ms var(--ease-out-expo),
+    border-color 300ms ease,
+    background-color 300ms ease,
+    box-shadow 300ms ease;
+}
+
+.hover-lift:hover {
+  transform: translateY(-4px);
+}
+
+.fade-in {
+  animation: vetto-fade-in 700ms var(--ease-out-expo) both;
+}
+
+.float-slow {
+  animation: vetto-float 7s ease-in-out infinite;
+}
+
+.pulse-glow {
+  animation: vetto-pulse-glow 4s ease-in-out infinite;
+}
+
+@keyframes vetto-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes vetto-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-12px);
+  }
+}
+
+@keyframes vetto-pulse-glow {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(0.96);
+  }
+
+  50% {
+    opacity: 0.8;
+    transform: scale(1.04);
+  }
+}
+
+/* =========================================
+   SCROLLBAR
+========================================= */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #35353d var(--background);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--background);
+}
+
+::-webkit-scrollbar-thumb {
+  border: 2px solid var(--background);
+  border-radius: 999px;
+  background: #35353d;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #555562;
+}
+
+/* =========================================
+   ACCESSIBILITY
+========================================= */
+
+:focus-visible {
+  outline: 2px solid var(--primary-hover);
+  outline-offset: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* =========================================
+   RESPONSIVE
+========================================= */
+
+@media (max-width: 768px) {
+  :root {
+    --navbar-height: 68px;
+  }
+
+  .container-main {
+    width: min(calc(100% - 36px), var(--container-width));
+  }
+
+  .section-padding {
+    padding-block: 80px;
+  }
+}
+
+@media (max-width: 480px) {
+  .container-main {
+    width: min(calc(100% - 32px), var(--container-width));
+  }
+
+  .section-padding {
+    padding-block: 64px;
+  }
 }
