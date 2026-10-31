@@ -632,3 +632,248 @@ pre,
     opacity: 0.55;
   }
 }
+
+
+/* =========================================
+   VETTO ORBITAL SCENE
+========================================= */
+
+.orbital-scene {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  aspect-ratio: 1;
+  place-items: center;
+  margin-inline: auto;
+}
+
+.orbital-scene__ambient {
+  position: absolute;
+  inset: 20%;
+  z-index: -1;
+  border-radius: 50%;
+  background: rgb(109 40 217 / 16%);
+  filter: blur(75px);
+  pointer-events: none;
+}
+
+.orbital-scene__connections {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.orbital-scene__ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  border: 1px solid rgb(167 139 250 / 20%);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.orbital-scene__ring--outer {
+  width: 94%;
+  aspect-ratio: 1;
+  border-color: rgb(167 139 250 / 15%);
+  transform: translate(-50%, -50%) rotateX(68deg) rotate(-20deg);
+}
+
+.orbital-scene__ring--middle {
+  width: 76%;
+  aspect-ratio: 1;
+  border-color: rgb(196 181 253 / 22%);
+  transform: translate(-50%, -50%) rotateX(68deg) rotate(35deg);
+}
+
+.orbital-scene__ring--inner {
+  width: 56%;
+  aspect-ratio: 1;
+  border-color: rgb(139 92 246 / 28%);
+  transform: translate(-50%, -50%) rotateX(68deg) rotate(-45deg);
+}
+
+.orbital-scene__node {
+  position: absolute;
+  display: block;
+  width: 9px;
+  height: 9px;
+  border: 2px solid #ddd6fe;
+  border-radius: 50%;
+  background: #8b5cf6;
+  box-shadow:
+    0 0 10px rgb(167 139 250 / 90%),
+    0 0 24px rgb(139 92 246 / 65%);
+}
+
+.orbital-scene__node--outer {
+  top: 14%;
+  left: 16%;
+}
+
+.orbital-scene__node--outer-secondary {
+  right: 12%;
+  bottom: 20%;
+  width: 6px;
+  height: 6px;
+}
+
+.orbital-scene__node--middle {
+  top: 10%;
+  right: 20%;
+  width: 7px;
+  height: 7px;
+}
+
+.orbital-scene__node--middle-secondary {
+  bottom: 8%;
+  left: 22%;
+  width: 5px;
+  height: 5px;
+}
+
+.orbital-scene__node--inner {
+  top: 50%;
+  right: -4px;
+  width: 7px;
+  height: 7px;
+  transform: translateY(-50%);
+}
+
+.orbital-scene__center {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  width: 64%;
+  aspect-ratio: 1;
+  place-items: center;
+}
+
+.orbital-scene__center > * {
+  width: 100%;
+}
+
+.orbital-scene__marker {
+  position: absolute;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 11px;
+  border: 1px solid rgb(167 139 250 / 18%);
+  border-radius: 999px;
+  background: rgb(17 17 20 / 75%);
+  color: #c4b5fd;
+  font-family: var(--font-code);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  white-space: nowrap;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.orbital-scene__marker > span {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--success);
+  box-shadow: 0 0 10px rgb(52 211 153 / 65%);
+}
+
+.orbital-scene__marker--top {
+  top: 13%;
+  right: 0;
+}
+
+.orbital-scene__marker--bottom {
+  bottom: 13%;
+  left: 0;
+}
+
+.orbital-scene--animated .orbital-scene__ring--outer {
+  animation: orbital-rotate-outer 32s linear infinite;
+}
+
+.orbital-scene--animated .orbital-scene__ring--middle {
+  animation: orbital-rotate-middle 24s linear infinite;
+}
+
+.orbital-scene--animated .orbital-scene__ring--inner {
+  animation: orbital-rotate-inner 18s linear infinite;
+}
+
+.orbital-scene--animated .orbital-scene__node {
+  animation: orbital-node-pulse 3s ease-in-out infinite;
+}
+
+@keyframes orbital-rotate-outer {
+  from {
+    transform: translate(-50%, -50%) rotateX(68deg) rotate(-20deg);
+  }
+
+  to {
+    transform: translate(-50%, -50%) rotateX(68deg) rotate(340deg);
+  }
+}
+
+@keyframes orbital-rotate-middle {
+  from {
+    transform: translate(-50%, -50%) rotateX(68deg) rotate(35deg);
+  }
+
+  to {
+    transform: translate(-50%, -50%) rotateX(68deg) rotate(-325deg);
+  }
+}
+
+@keyframes orbital-rotate-inner {
+  from {
+    transform: translate(-50%, -50%) rotateX(68deg) rotate(-45deg);
+  }
+
+  to {
+    transform: translate(-50%, -50%) rotateX(68deg) rotate(315deg);
+  }
+}
+
+@keyframes orbital-node-pulse {
+  0%,
+  100% {
+    opacity: 0.65;
+    box-shadow: 0 0 8px rgb(167 139 250 / 55%);
+  }
+
+  50% {
+    opacity: 1;
+    box-shadow:
+      0 0 12px rgb(167 139 250 / 95%),
+      0 0 25px rgb(139 92 246 / 65%);
+  }
+}
+
+@media (max-width: 480px) {
+  .orbital-scene__marker {
+    padding: 6px 8px;
+    font-size: 8px;
+  }
+
+  .orbital-scene__marker--top {
+    right: -2%;
+  }
+
+  .orbital-scene__marker--bottom {
+    left: -2%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .orbital-scene--animated .orbital-scene__ring,
+  .orbital-scene--animated .orbital-scene__node {
+    animation: none !important;
+  }
+}
