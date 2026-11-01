@@ -10,7 +10,7 @@ It does not submit transactions, contact inspected sites, or claim any chain ven
 |---|---|---|---|
 | Robinhood Chain RPC + chain ID 4663 | planned | Run `pnpm verify:chain` with two independently operated HTTPS RPCs and the officially verified USDG address; the checker compares chain ID, shared-block contract bytecode, symbol and decimals. This is read-only and does not verify pool liquidity or authorize execution. | |
 | Token addresses / decimals (ETH, USDG) | planned | Confirm on-chain; set `status: "verified"` in `asset-registry` | |
-| Uniswap v4 direct pool adapter | planned | Real liquid pool; simulation passes; testnet/fork tx | |
+| Uniswap v4 direct pool adapter | planned | Discover the exact ETH/USDG `Initialize` pool key; `pnpm verify:pool` confirms PoolManager/hook code and pool state across two RPCs at a common block. Then verify liquidity for a requested trade size, a real executable quote, and simulation/test transaction before enabling an adapter. Read-only state alone is not a quote or liquidity guarantee. | |
 | Split route / solver / RFQ | planned | Real executable counterparties | |
 | Private relay | blocked | A relay that accepts Robinhood Chain txs and is not mirrored to the public mempool | |
 | Wallet sign-in | planned | SIWE EOA auth uses Ethereum Mainnet (chain ID 1) for message signing only; configure a WalletConnect project ID and run migrations. This does not enable Robinhood Chain execution. | |

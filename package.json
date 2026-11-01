@@ -10,6 +10,7 @@
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
     "verify:chain": "pnpm --filter @vetto/web verify:chain",
+    "verify:pool": "pnpm --filter @vetto/web verify:pool",
     "db:migrate": "pnpm --filter @vetto/web db:migrate"
   },
   "devDependencies": {

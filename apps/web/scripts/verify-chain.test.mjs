@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { verifyChain, UNISWAP_V4_POOL_MANAGER } from "./verify-chain.mjs";
+import { encodeAbiParameters, keccak256, toFunctionSelector } from "viem";
+import { verifyChain, verifyV4Pool, UNISWAP_V4_POOL_MANAGER } from "./verify-chain.mjs";
 
 const TOKEN = "0x1234567890123456789012345678901234567890";
 const ENV = {
@@ -87,5 +88,110 @@ test("requires distinct RPC origins and HTTPS for remote endpoints", async () =>
   await assert.rejects(
     verifyChain({ ...ENV, primaryUrl: "http://rpc.example.com", fetchImpl: mockFetch() }),
     /must use HTTPS/,
+  );
+});
+
+function poolMockFetch({
+  secondaryTick = 42n,
+  primaryLiquidity = 12345n,
+  secondaryLiquidity = 12345n,
+  hookCode = "0x",
+  hooksAddress = "0x0000000000000000000000000000000000000000",
+  initialized = true,
+} = {}) {
+  const zero = "0x0000000000000000000000000000000000000000";
+  const key = [
+    { type: "address" },
+    { type: "address" },
+    { type: "uint24" },
+    { type: "int24" },
+    { type: "address" },
+  ];
+  const poolId = keccak256(encodeAbiParameters(key, [zero, TOKEN, 3000n, 60n, hooksAddress]));
+  const stateSlot = keccak256(encodeAbiParameters(
+    [{ type: "bytes32" }, { type: "uint256" }],
+    [poolId, 6n],
+  ));
+  const liquiditySlot = `0x${(BigInt(stateSlot) + 3n).toString(16).padStart(64, "0")}`;
+  const selector = toFunctionSelector("extsload(bytes32)");
+  const primaryTick = 42n;
+
+  return async (url, init) => {
+    const host = new URL(url).host;
+    const secondary = host.endsWith("8546");
+    const { method, params } = JSON.parse(init.body);
+    let result;
+    if (method === "eth_chainId") result = "0x1237";
+    else if (method === "eth_getCode") {
+      result = params[0].toLowerCase() === UNISWAP_V4_POOL_MANAGER.toLowerCase() ? "0x6001" : hookCode;
+    } else if (method === "eth_call" && params[0].data.startsWith(selector)) {
+      if (params[0].data.toLowerCase() === `${selector}${stateSlot.slice(2)}`.toLowerCase()) {
+        const tick = secondary ? secondaryTick : primaryTick;
+        const sqrtPriceX96 = initialized ? 1n << 96n : 0n;
+        const lpFee = 3000n;
+        const packed = sqrtPriceX96 | (tick << 160n) | (lpFee << 208n);
+        result = `0x${packed.toString(16).padStart(64, "0")}`;
+      } else if (params[0].data.toLowerCase() === `${selector}${liquiditySlot.slice(2)}`.toLowerCase()) {
+        const liquidity = secondary ? secondaryLiquidity : primaryLiquidity;
+        result = `0x${liquidity.toString(16).padStart(64, "0")}`;
+      } else {
+        throw new Error("Unexpected v4 storage slot");
+      }
+    } else {
+      throw new Error(`Unexpected RPC method ${method}`);
+    }
+    return Response.json({ jsonrpc: "2.0", id: 1, result });
+  };
+}
+
+const POOL = {
+  ...ENV,
+  commonBlock: "256",
+  fee: "3000",
+  tickSpacing: "60",
+  hooksAddress: "0x0000000000000000000000000000000000000000",
+};
+
+test("reads and compares initialized v4 pool state on both RPCs", async () => {
+  const report = await verifyV4Pool({ ...POOL, fetchImpl: poolMockFetch() });
+  assert.equal(report.initialized, true);
+  assert.equal(report.currentTick, "42");
+  assert.equal(report.lpFee, "3000");
+  assert.equal(report.activeLiquidity, "12345");
+  assert.equal(report.hasActiveLiquidity, true);
+  assert.equal(report.commonBlock, "256");
+});
+
+test("rejects pool state that differs between providers", async () => {
+  await assert.rejects(
+    verifyV4Pool({ ...POOL, fetchImpl: poolMockFetch({ secondaryTick: 43n }) }),
+    /disagree on PoolManager, hook, or pool state/,
+  );
+});
+
+test("reports an uninitialized pool instead of treating empty state as liquidity", async () => {
+  const report = await verifyV4Pool({
+    ...POOL,
+    fetchImpl: poolMockFetch({ initialized: false, primaryLiquidity: 0n, secondaryLiquidity: 0n }),
+  });
+  assert.equal(report.initialized, false);
+  assert.equal(report.hasActiveLiquidity, false);
+});
+
+test("rejects a pool key with invalid tick spacing", async () => {
+  await assert.rejects(
+    verifyV4Pool({ ...POOL, tickSpacing: "0", fetchImpl: poolMockFetch() }),
+    /non-zero int24/,
+  );
+});
+
+test("rejects nonzero hook addresses with no deployed contract", async () => {
+  await assert.rejects(
+    verifyV4Pool({
+      ...POOL,
+      hooksAddress: "0x0000000000000000000000000000000000000001",
+      fetchImpl: poolMockFetch({ hooksAddress: "0x0000000000000000000000000000000000000001" }),
+    }),
+    /no hooks contract bytecode/,
   );
 });

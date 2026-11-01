@@ -34,6 +34,19 @@ pnpm verify:chain
 
 The checker validates chain ID 4663 on both RPCs, compares the Uniswap v4 PoolManager (listed in the [official Uniswap deployment feed](https://developers.uniswap.org/deployments.json)) and configured USDG contract bytecode at a common block, and checks that USDG reports symbol `USDG` with 6 decimals. It is read-only; a passing result does not establish pool liquidity, executable quotes, or transaction safety. Keep the integration matrix `planned` until the remaining Phase 0 evidence and sign-off are complete.
 
+### Inspect one Uniswap v4 ETH/USDG pool
+
+Only use `fee`, `tickSpacing`, and `hooks` taken from the exact pool's trusted `Initialize` event or official source. Then run:
+
+```powershell
+$env:ROBINHOOD_POOL_FEE = "3000"
+$env:ROBINHOOD_POOL_TICK_SPACING = "60"
+$env:ROBINHOOD_POOL_HOOKS_ADDRESS = "0x..."
+pnpm verify:pool
+```
+
+The sample fee and spacing above are placeholders, not a claim that this pool exists. The read-only checker computes the v4 pool ID for native ETH/USDG, then compares initialization state and active liquidity across both RPCs at the same block. It does not estimate a trade, validate liquidity at a specific size, or prepare/submit a transaction.
+
 ## What is real today
 - Landing page and animations, chat shell, docs, WalletConnect EOA sign-in using an Ethereum Mainnet (chain ID 1) message, one-time SIWE challenges, and database-backed sessions (requires `DATABASE_URL`, migrations, and `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`).
 - Authenticated per-user chat prompt history at `/api/history`, with idempotent writes and a 100-entry retention cap. Preview-mode prompts remain in the current tab only.

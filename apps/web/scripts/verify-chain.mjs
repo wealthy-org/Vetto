@@ -1,9 +1,13 @@
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { encodeAbiParameters, getAddress, keccak256, toFunctionSelector } from "viem";
 
 export const ROBINHOOD_CHAIN_ID = 4663n;
 // Listed in Uniswap's public deployment feed: https://developers.uniswap.org/deployments.json
 export const UNISWAP_V4_POOL_MANAGER = "0x8366a39CC670B4001A1121B8F6A443A643e40951";
+const POOLS_SLOT = 6n;
+const LIQUIDITY_OFFSET = 3n;
+const EXTSLOAD_SELECTOR = toFunctionSelector("extsload(bytes32)");
 const USDG_SYMBOL = "USDG";
 const USDG_DECIMALS = 6n;
 
@@ -89,7 +93,7 @@ function validateAddress(address) {
   if (typeof address !== "string" || !/^0x[0-9a-f]{40}$/i.test(address)) {
     throw new Error("ROBINHOOD_USDG_ADDRESS must be a 20-byte EVM address.");
   }
-  return address;
+  return getAddress(address);
 }
 
 export async function verifyChain({
@@ -164,6 +168,155 @@ export async function verifyChain({
     poolManager: UNISWAP_V4_POOL_MANAGER,
     usdg: { address: tokenAddress, symbol: snapshots[0].symbol, decimals: Number(snapshots[0].decimals) },
     note: "Read-only checks passed. This does not verify token ownership, pool liquidity, quote execution, or transaction safety.",
+  };
+}
+
+function validatePoolKey({ fee, tickSpacing, hooksAddress }) {
+  if (!/^\d+$/.test(String(fee)) || BigInt(fee) > 0xffffffn) {
+    throw new Error("ROBINHOOD_POOL_FEE must be a uint24 decimal value.");
+  }
+  if (!/^-?\d+$/.test(String(tickSpacing))) {
+    throw new Error("ROBINHOOD_POOL_TICK_SPACING must be a signed decimal integer.");
+  }
+  const spacing = BigInt(tickSpacing);
+  if (spacing === 0n || spacing < -(1n << 23n) || spacing >= (1n << 23n)) {
+    throw new Error("ROBINHOOD_POOL_TICK_SPACING must be a non-zero int24 value.");
+  }
+  if (spacing < 0n) {
+    throw new Error("Negative tick spacing is not supported by this checker.");
+  }
+  if (typeof hooksAddress !== "string" || !/^0x[0-9a-f]{40}$/i.test(hooksAddress)) {
+    throw new Error("ROBINHOOD_POOL_HOOKS_ADDRESS must be a 20-byte EVM address.");
+  }
+  return { fee: BigInt(fee), tickSpacing: spacing, hooksAddress: getAddress(hooksAddress) };
+}
+
+function decodePoolState(slot0Raw, liquidityRaw) {
+  for (const [name, raw] of [["slot0", slot0Raw], ["liquidity", liquidityRaw]]) {
+    if (typeof raw !== "string" || !/^0x[0-9a-f]{64}$/i.test(raw)) {
+      throw new Error(`PoolManager returned invalid ${name} storage data.`);
+    }
+  }
+  const slot0 = BigInt(slot0Raw);
+  const sqrtPriceX96 = slot0 & ((1n << 160n) - 1n);
+  const encodedTick = (slot0 >> 160n) & ((1n << 24n) - 1n);
+  const tick = encodedTick >= (1n << 23n) ? encodedTick - (1n << 24n) : encodedTick;
+  const protocolFee = (slot0 >> 184n) & 0xffffffn;
+  const lpFee = (slot0 >> 208n) & 0xffffffn;
+  const activeLiquidity = BigInt(liquidityRaw) & ((1n << 128n) - 1n);
+  return { sqrtPriceX96, tick, protocolFee, lpFee, activeLiquidity };
+}
+
+/**
+ * Read a specific USDG/native-ETH v4 pool at the shared block from verifyChain.
+ * The supplied fee, spacing, and hooks must come from a trusted Initialize event/source.
+ */
+export async function verifyV4Pool({
+  primaryUrl,
+  secondaryUrl,
+  usdgAddress,
+  commonBlock,
+  fee,
+  tickSpacing,
+  hooksAddress,
+  fetchImpl = fetch,
+}) {
+  if (!commonBlock || !/^\d+$/.test(String(commonBlock))) {
+    throw new Error("A common block from verifyChain is required.");
+  }
+  const usd = validateAddress(usdgAddress);
+  const hooks = validatePoolKey({ fee, tickSpacing, hooksAddress });
+  const primary = endpoint(primaryUrl, "Primary RPC");
+  const secondary = endpoint(secondaryUrl, "Secondary RPC");
+  if (primary.origin === secondary.origin) {
+    throw new Error("Primary and secondary RPCs must use different origins.");
+  }
+
+  const [currency0, currency1] = [
+    "0x0000000000000000000000000000000000000000",
+    usd,
+  ].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+  const poolKey = [
+    { type: "address" },
+    { type: "address" },
+    { type: "uint24" },
+    { type: "int24" },
+    { type: "address" },
+  ];
+  const poolId = keccak256(encodeAbiParameters(poolKey, [
+    currency0,
+    currency1,
+    hooks.fee,
+    hooks.tickSpacing,
+    hooks.hooksAddress,
+  ]));
+  const stateSlot = keccak256(encodeAbiParameters(
+    [{ type: "bytes32" }, { type: "uint256" }],
+    [poolId, POOLS_SLOT],
+  ));
+  const liquiditySlot = `0x${(BigInt(stateSlot) + LIQUIDITY_OFFSET).toString(16).padStart(64, "0")}`;
+  const blockTag = `0x${BigInt(commonBlock).toString(16)}`;
+  const providers = [
+    { name: "primary", url: primary },
+    { name: "secondary", url: secondary },
+  ];
+
+  const states = await Promise.all(providers.map(async (provider) => {
+    const [chainIdRaw, managerCode, slot0Raw, liquidityRaw, hooksCode] = await Promise.all([
+      rpcCall(provider.url, "eth_chainId", [], fetchImpl),
+      rpcCall(provider.url, "eth_getCode", [UNISWAP_V4_POOL_MANAGER, blockTag], fetchImpl),
+      rpcCall(provider.url, "eth_call", [
+        { to: UNISWAP_V4_POOL_MANAGER, data: `${EXTSLOAD_SELECTOR}${stateSlot.slice(2)}` },
+        blockTag,
+      ], fetchImpl),
+      rpcCall(provider.url, "eth_call", [
+        { to: UNISWAP_V4_POOL_MANAGER, data: `${EXTSLOAD_SELECTOR}${liquiditySlot.slice(2)}` },
+        blockTag,
+      ], fetchImpl),
+      hooks.hooksAddress.toLowerCase() === "0x0000000000000000000000000000000000000000"
+        ? Promise.resolve("0x")
+        : rpcCall(provider.url, "eth_getCode", [hooks.hooksAddress, blockTag], fetchImpl),
+    ]);
+    if (rpcQuantity(chainIdRaw, `${provider.name} RPC chainId`) !== ROBINHOOD_CHAIN_ID) {
+      throw new Error(`${provider.name} RPC is not on Robinhood Chain.`);
+    }
+    if (typeof managerCode !== "string" || !/^0x[0-9a-f]+$/i.test(managerCode)) {
+      throw new Error(`${provider.name} RPC returned invalid PoolManager code.`);
+    }
+    if (hooks.hooksAddress.toLowerCase() !== "0x0000000000000000000000000000000000000000"
+      && (typeof hooksCode !== "string" || !/^0x[0-9a-f]+$/i.test(hooksCode) || hooksCode.toLowerCase() === "0x")) {
+      throw new Error(`${provider.name} RPC has no hooks contract bytecode at the shared block.`);
+    }
+    return {
+      managerCode: managerCode.toLowerCase(),
+      hooksCode: hooksCode.toLowerCase(),
+      state: decodePoolState(slot0Raw, liquidityRaw),
+    };
+  }));
+  if (states[0].managerCode !== states[1].managerCode
+    || states[0].hooksCode !== states[1].hooksCode
+    || JSON.stringify(Object.fromEntries(Object.entries(states[0].state).map(([key, value]) => [key, value.toString()])))
+      !== JSON.stringify(Object.fromEntries(Object.entries(states[1].state).map(([key, value]) => [key, value.toString()])))) {
+    throw new Error(`RPCs disagree on PoolManager, hook, or pool state at block ${commonBlock}.`);
+  }
+
+  const state = states[0].state;
+  const initialized = state.sqrtPriceX96 !== 0n;
+  return {
+    poolId,
+    currencies: { currency0, currency1 },
+    fee: hooks.fee.toString(),
+    tickSpacing: hooks.tickSpacing.toString(),
+    hooks: hooks.hooksAddress,
+    commonBlock: String(commonBlock),
+    initialized,
+    currentTick: state.tick.toString(),
+    sqrtPriceX96: state.sqrtPriceX96.toString(),
+    protocolFee: state.protocolFee.toString(),
+    lpFee: state.lpFee.toString(),
+    activeLiquidity: state.activeLiquidity.toString(),
+    hasActiveLiquidity: state.activeLiquidity > 0n,
+    note: "Read-only pool state only. It does not prove trade-size liquidity, executable quotes, fair pricing, or transaction safety.",
   };
 }
 
