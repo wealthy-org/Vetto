@@ -25,9 +25,7 @@ Before enabling any chain integration, configure two independently operated RPC 
 
 ```powershell
 $env:ROBINHOOD_RPC_URL_PRIMARY = "https://robinhood.drpc.org"
-
 $env:ROBINHOOD_RPC_URL_SECONDARY = "https://robinhood.api.pocket.network"
-
 $env:ROBINHOOD_USDG_ADDRESS = "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168"
 pnpm verify:chain
 ```
@@ -39,9 +37,9 @@ The checker validates chain ID 4663 on both RPCs, compares the Uniswap v4 PoolMa
 Only use `fee`, `tickSpacing`, and `hooks` taken from the exact pool's trusted `Initialize` event or official source. Then run:
 
 ```powershell
-$env:ROBINHOOD_POOL_FEE = "3000"
-$env:ROBINHOOD_POOL_TICK_SPACING = "60"
-$env:ROBINHOOD_POOL_HOOKS_ADDRESS = "0x..."
+$env:ROBINHOOD_POOL_FEE = "8388608"
+$env:ROBINHOOD_POOL_TICK_SPACING = "1"
+$env:ROBINHOOD_POOL_HOOKS_ADDRESS = "0x987E330F00B79864a07FE81dFaC344D0078ABCC0"
 pnpm verify:pool
 ```
 
