@@ -27,6 +27,14 @@ test("wallet challenge rejects malformed address before database access", async 
   assert.equal(response.status, 400);
 });
 
+test("wallet challenge rejects unsupported chains before database access", async () => {
+  const unsupported = await challenge(post("/api/auth/challenge", {
+    address: "0x0000000000000000000000000000000000000001",
+    chainId: 5,
+  }));
+  assert.equal(unsupported.status, 400);
+});
+
 test("wallet verification rejects malformed challenge input before database access", async () => {
   const response = await verify(post("/api/auth/verify", {
     challengeId: "not-a-uuid",

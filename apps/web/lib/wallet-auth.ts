@@ -1,8 +1,8 @@
 import { createHash, randomBytes } from "node:crypto";
 import { getAddress, isHex, type Address, type Hex } from "viem";
-import { WALLET_AUTH_CHAIN_ID } from "./auth-constants";
+import { WALLET_AUTH_CHAIN_ID, isWalletAuthChainId } from "./auth-constants";
 
-export { WALLET_AUTH_CHAIN_ID } from "./auth-constants";
+export { WALLET_AUTH_CHAIN_ID, WALLET_AUTH_CHAIN_IDS, isWalletAuthChainId } from "./auth-constants";
 export const AUTH_CHALLENGE_TTL_SECONDS = 5 * 60;
 export const AUTH_SESSION_TTL_SECONDS = 7 * 24 * 60 * 60;
 export const AUTH_SESSION_COOKIE = process.env.NODE_ENV === "production"
@@ -26,10 +26,13 @@ export function makeSiweMessage(input: {
   domain: string;
   uri: string;
   address: Address;
+  chainId?: number;
   nonce: string;
   issuedAt: Date;
   expiresAt: Date;
 }): string {
+  const chainId = input.chainId ?? WALLET_AUTH_CHAIN_ID;
+  if (!isWalletAuthChainId(chainId)) throw new Error("Unsupported wallet authentication chain.");
   return [
     `${input.domain} wants you to sign in with your Ethereum account:`,
     input.address,
@@ -38,7 +41,7 @@ export function makeSiweMessage(input: {
     "",
     `URI: ${input.uri}`,
     "Version: 1",
-    `Chain ID: ${WALLET_AUTH_CHAIN_ID}`,
+    `Chain ID: ${chainId}`,
     `Nonce: ${input.nonce}`,
     `Issued At: ${input.issuedAt.toISOString()}`,
     `Expiration Time: ${input.expiresAt.toISOString()}`,

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { WALLET_AUTH_CHAIN_ID } from "@/lib/auth-constants";
+import { isWalletAuthChainId, WALLET_AUTH_CHAIN_IDS } from "@/lib/auth-constants";
 import { StatusChip } from "./StatusChip";
 import { IconLock } from "./icons";
 
@@ -47,7 +47,7 @@ export function WalletConnectSignIn({ mode }: { mode: "sign-in" | "sign-up" }) {
       setProgress("Connecting to WalletConnect relay…");
       const provider = await EthereumProvider.init({
         projectId: PROJECT_ID,
-        optionalChains: [WALLET_AUTH_CHAIN_ID],
+        optionalChains: [...WALLET_AUTH_CHAIN_IDS],
         showQrModal: true,
         methods: ["personal_sign", "eth_requestAccounts"],
         events: ["accountsChanged", "chainChanged"],
@@ -68,11 +68,14 @@ export function WalletConnectSignIn({ mode }: { mode: "sign-in" | "sign-up" }) {
       const address = accounts[0];
       if (!address) throw new Error("No wallet account was shared.");
 
-      if (provider.chainId !== WALLET_AUTH_CHAIN_ID) {
-        throw new Error(`Connect to Ethereum Mainnet (chain ID ${WALLET_AUTH_CHAIN_ID}) to sign in.`);
+      if (!isWalletAuthChainId(provider.chainId)) {
+        throw new Error("Switch to Ethereum Mainnet or Robinhood Chain to sign in.");
       }
 
-      const challenge = await postJson<{ challengeId: string; message: string }>("/api/auth/challenge", { address });
+      const challenge = await postJson<{ challengeId: string; message: string }>("/api/auth/challenge", {
+        address,
+        chainId: provider.chainId,
+      });
       setProgress("Approve the one-time login message in your wallet. This is not a transaction.");
       const signature = await provider.request<unknown>({
         method: "personal_sign",
@@ -112,6 +115,7 @@ export function WalletConnectSignIn({ mode }: { mode: "sign-in" | "sign-up" }) {
       {busy && <p role="status" className="mt-2 text-xs text-white/55">{progress}</p>}
       {error && <p role="alert" className="mt-2 text-xs text-peach">{error}</p>}
       {!configured && <p className="mt-2 text-xs text-white/40">WalletConnect is not configured. Add its public project ID to the web app environment.</p>}
+      {configured && <p className="mt-2 text-xs text-white/40">Sign-in supports Ethereum Mainnet and Robinhood Chain. The message creates a session only; no transaction is requested.</p>}
     </div>
   );
 }

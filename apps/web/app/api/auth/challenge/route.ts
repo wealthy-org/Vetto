@@ -5,6 +5,7 @@ import {
   AUTH_CHALLENGE_TTL_SECONDS,
   makeSiweMessage,
   normalizeWalletAddress,
+  isWalletAuthChainId,
   WALLET_AUTH_CHAIN_ID,
 } from "@/lib/wallet-auth";
 
@@ -15,6 +16,10 @@ export async function POST(request: Request) {
 
   const address = normalizeWalletAddress(guarded.body.address);
   if (!address) return jsonError(400, "A valid EVM wallet address is required.");
+  const chainId = guarded.body.chainId === undefined ? WALLET_AUTH_CHAIN_ID : guarded.body.chainId;
+  if (!isWalletAuthChainId(chainId)) {
+    return jsonError(400, "Wallet sign-in supports Ethereum Mainnet (1) or Robinhood Chain (4663).");
+  }
 
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) return jsonError(503, "Wallet sign-in is unavailable until the database is configured.");
@@ -40,6 +45,7 @@ export async function POST(request: Request) {
     domain: origin.host,
     uri: origin.origin,
     address,
+    chainId,
     nonce: randomBytes(16).toString("hex"),
     issuedAt,
     expiresAt,
@@ -60,7 +66,7 @@ export async function POST(request: Request) {
     await pool.query(
       `insert into wallet_auth_challenges (id, chain_id, address, message, expires_at)
        values ($1, $2, $3, $4, $5)`,
-      [id, WALLET_AUTH_CHAIN_ID, address.toLowerCase(), message, expiresAt],
+      [id, chainId, address.toLowerCase(), message, expiresAt],
     );
   } catch (error) {
     console.error("Wallet auth challenge could not be stored:", error instanceof Error ? error.message : error);

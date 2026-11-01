@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { privateKeyToAccount, generatePrivateKey } from "viem/accounts";
 import { verifyMessage } from "viem";
 import {
+  isWalletAuthChainId,
   hashSessionToken,
   makeSiweMessage,
   normalizeSignature,
@@ -14,6 +15,13 @@ test("wallet auth normalizes EVM addresses and accepts only 65-byte signatures",
   assert.equal(normalizeWalletAddress("not-an-address"), null);
   assert.equal(normalizeSignature(`0x${"a".repeat(130)}`), `0x${"a".repeat(130)}`);
   assert.equal(normalizeSignature("0x1234"), null);
+});
+
+test("wallet sign-in accepts only Ethereum Mainnet and Robinhood Chain", () => {
+  assert.equal(isWalletAuthChainId(1), true);
+  assert.equal(isWalletAuthChainId(4663), true);
+  assert.equal(isWalletAuthChainId(5), false);
+  assert.equal(isWalletAuthChainId("4663"), false);
 });
 
 test("SIWE message is domain-bound, chain-bound, and explicitly not transaction approval", () => {
@@ -30,6 +38,18 @@ test("SIWE message is domain-bound, chain-bound, and explicitly not transaction 
   assert.match(message, /Chain ID: 1/);
   assert.match(message, /Nonce: a1b2c3d4e5f6a7b8/);
   assert.match(message, /Expiration Time: 2026-11-01T00:05:00\.000Z/);
+
+  const robinhoodMessage = makeSiweMessage({
+    domain: "vetto.example",
+    uri: "https://vetto.example",
+    address: "0x0000000000000000000000000000000000000001",
+    chainId: 4663,
+    nonce: "a1b2c3d4e5f6a7b8",
+    issuedAt: new Date("2026-11-01T00:00:00.000Z"),
+    expiresAt: new Date("2026-11-01T00:05:00.000Z"),
+  });
+  assert.match(robinhoodMessage, /Chain ID: 4663/);
+  assert.match(robinhoodMessage, /does not authorize token transfers or any transaction/);
 });
 
 test("session token storage uses a one-way hash", () => {

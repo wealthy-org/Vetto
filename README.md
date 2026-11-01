@@ -48,7 +48,7 @@ To inspect a single pool key when you already have its verified values, set `ROB
 The checker compares PoolManager storage with the official Uniswap v4 StateView (`getSlot0` and `getLiquidity`) at the same block on both RPCs. The Robinhood StateView address is listed in [Uniswap's Robinhood fork test](https://github.com/Uniswap/v4-periphery/blob/c6e4754dab11bd38c6f08ac51c3c868569e93d64/test/ReservesLens.fork.t.sol). This remains read-only verification; it is not a quote or a transaction safety check.
 
 ## What is real today
-- Landing page and animations, chat shell, docs, WalletConnect EOA sign-in using an Ethereum Mainnet (chain ID 1) message, one-time SIWE challenges, and database-backed sessions (requires `DATABASE_URL`, migrations, and `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`).
+- Landing page and animations, chat shell, docs, WalletConnect EOA sign-in using a chain-bound message on Ethereum Mainnet (chain ID 1) or Robinhood Chain (4663), one-time SIWE challenges, and database-backed sessions (requires `DATABASE_URL`, migrations, and `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`).
 - Authenticated per-user chat prompt history at `/api/history`, with idempotent writes and a 100-entry retention cap. Preview-mode prompts remain in the current tab only.
 - Intent preview + clarification, passive link policy check, honest "no route yet" quotes.
 - **No** token execution, **no** live quotes: Phase 0 verification is still open. Sign-in is not transaction approval. Email/social login, contract wallets, and wallet-based execution are not implemented. See `docs/INTEGRATION_MATRIX.md`.
@@ -58,13 +58,13 @@ Set `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` in `apps/web/.env.local`, configure `
 ```bash
 pnpm db:migrate
 ```
-The wallet signs a short-lived, single-use SIWE message for Ethereum Mainnet (chain ID 1) to support wallets that do not recognize Robinhood Chain. This is sign-in only: VETTO does not send an Ethereum transaction, and the app's Robinhood Chain (4663) execution remains unavailable until verified. The server verifies EOA signatures and stores only a hash of the opaque session token; the browser receives an HttpOnly, SameSite=Lax cookie. Authentication never grants transaction authority.
+The wallet signs a short-lived, single-use SIWE message on Ethereum Mainnet (chain ID 1) or Robinhood Chain (4663), depending on the active WalletConnect chain. This is sign-in only: VETTO does not send a transaction, and Robinhood Chain execution remains unavailable until separately verified. The server accepts only these two chain IDs, verifies EOA signatures, and stores only a hash of the opaque session token; the browser receives an HttpOnly, SameSite=Lax cookie. Authentication never grants transaction authority. Test the configured WalletConnect project with the actual target wallets in deployment before treating chain support as verified.
 
 Run `pnpm db:migrate` again to create the per-user chat history table. Only authenticated users' prompts are saved; preview mode stores prompts in the current tab only. Saved requests can be deleted individually or cleared from the app; deletion also removes their cached idempotency responses.
 
 ## Next steps (brief §20 order)
 1. Phase 0: verify RPC, token addresses, v4 pools. Then flip registry/capability statuses.
-2. Verify WalletConnect support for the target chain in deployment; add only verified WalletConnect hosts to CSP.
+2. Verify WalletConnect support for the target chain in deployment; the app advertises Ethereum Mainnet and Robinhood Chain to WalletConnect, while CSP allows only explicit WalletConnect hosts when configured.
 3. Direct-pool adapter in `apps/web/app/api/quotes/route.ts` `ADAPTERS`; simulation; wallet-signed execution + receipt.
 4. Move rate limiting/idempotency to Postgres; extract `apps/api` and `apps/worker` (pg-boss) before Phase 3.
 

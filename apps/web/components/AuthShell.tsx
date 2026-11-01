@@ -35,7 +35,7 @@ export function AuthShell({ mode }: { mode: "sign-in" | "sign-up" }) {
           </div>
 
           <div className="mt-5 rounded-xl border border-white/10 bg-white/[.03] p-4 text-xs leading-relaxed text-white/60">
-            Wallet sign-in uses an Ethereum Mainnet message only to create a browser session; it does not authorize or send a transaction. App execution on Robinhood Chain is not available. Email sign-in is not available yet. You can still look around in preview mode.
+            Wallet sign-in supports Ethereum Mainnet and Robinhood Chain messages only to create a browser session; it does not authorize or send a transaction. App execution on Robinhood Chain is not available. Email sign-in is not available yet. You can still look around in preview mode.
             <Link href="/app" className="btn btn-primary mt-3 w-full">Continue in preview</Link>
           </div>
 

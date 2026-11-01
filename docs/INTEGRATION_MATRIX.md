@@ -13,7 +13,7 @@ It does not submit transactions, contact inspected sites, or claim any chain ven
 | Uniswap v4 direct pool adapter | planned | `pnpm discover:pools` compares exact ETH/USDG `Initialize` logs across two RPCs. `pnpm verify:pool` checks PoolManager storage against the official StateView and compares current pool state at a common block. Then verify liquidity for a requested trade size, a real executable quote, and simulation/test transaction before enabling an adapter. Read-only state alone is not a quote or liquidity guarantee. | |
 | Split route / solver / RFQ | planned | Real executable counterparties | |
 | Private relay | blocked | A relay that accepts Robinhood Chain txs and is not mirrored to the public mempool | |
-| Wallet sign-in | planned | SIWE EOA auth uses Ethereum Mainnet (chain ID 1) for message signing only; configure a WalletConnect project ID and run migrations. This does not enable Robinhood Chain execution. | |
+| Wallet sign-in | planned | SIWE EOA auth accepts chain-bound login messages from Ethereum Mainnet (1) or Robinhood Chain (4663); configure a WalletConnect project ID, run migrations, and test actual wallet support in deployment. This does not enable Robinhood Chain execution. | |
 | Per-user chat history | verified | Authenticated GET/POST/DELETE at `/api/history`; idempotent writes, bounded retention, and user-scoped item/all-history deletion including cached responses; preview history remains in-tab | |
 | Social sign-in | planned | Audited provider; custodial labelling | |
 | Simulation provider | planned | Asset + allowance deltas on this chain | |

@@ -10,7 +10,8 @@ import {
   makeSessionCookie,
   normalizeSignature,
   normalizeWalletAddress,
-  WALLET_AUTH_CHAIN_ID,
+  isWalletAuthChainId,
+  WALLET_AUTH_CHAIN_IDS,
 } from "@/lib/wallet-auth";
 
 interface ChallengeRow {
@@ -41,16 +42,17 @@ export async function POST(request: Request) {
     const result = await pool.query<ChallengeRow>(
       `select id, chain_id, address, message
        from wallet_auth_challenges
-       where id = $1 and address = $2 and chain_id = $3
+       where id = $1 and address = $2 and chain_id = any($3::bigint[])
          and consumed_at is null and expires_at > now()`,
-      [challengeId, address.toLowerCase(), WALLET_AUTH_CHAIN_ID],
+      [challengeId, address.toLowerCase(), WALLET_AUTH_CHAIN_IDS],
     );
     challenge = result.rows[0];
   } catch (error) {
     console.error("Wallet auth challenge lookup failed:", error instanceof Error ? error.message : error);
     return jsonError(503, "Wallet sign-in is temporarily unavailable.");
   }
-  if (!challenge || Number(challenge.chain_id) !== WALLET_AUTH_CHAIN_ID) {
+  const chainId = challenge ? Number(challenge.chain_id) : null;
+  if (!challenge || !isWalletAuthChainId(chainId)) {
     return jsonError(401, "The sign-in request expired or was already used. Please try again.");
   }
 
@@ -86,7 +88,7 @@ export async function POST(request: Request) {
        where id = $1 and address = $2 and chain_id = $3
          and consumed_at is null and expires_at > now()
        returning id`,
-      [challengeId, address.toLowerCase(), WALLET_AUTH_CHAIN_ID],
+      [challengeId, address.toLowerCase(), chainId],
     );
     if (consumed.rowCount !== 1) {
       await transactionClient.query("rollback");
@@ -101,7 +103,7 @@ export async function POST(request: Request) {
        on conflict (chain_id, address)
        do update set last_seen_at = now()
        returning user_id`,
-      [WALLET_AUTH_CHAIN_ID, address.toLowerCase(), candidateUserId],
+      [chainId, address.toLowerCase(), candidateUserId],
     );
     walletUserId = identity.rows[0]?.user_id;
     if (!walletUserId) throw new Error("Wallet identity was not returned.");
@@ -124,7 +126,7 @@ export async function POST(request: Request) {
     await transactionClient.query(
       `insert into audit_log (user_id, action, decision, meta)
        values ($1, 'auth.wallet.sign_in', 'allow', $2::jsonb)`,
-      [walletUserId, JSON.stringify({ chainId: WALLET_AUTH_CHAIN_ID })],
+      [walletUserId, JSON.stringify({ chainId })],
     );
     await transactionClient.query("commit");
     transactionOpen = false;
@@ -144,7 +146,7 @@ export async function POST(request: Request) {
 
   const response = jsonOk({
     authenticated: true,
-    wallet: { address: address.toLowerCase(), chainId: WALLET_AUTH_CHAIN_ID },
+    wallet: { address: address.toLowerCase(), chainId },
     expiresAt: expiresAt.toISOString(),
   });
   response.headers.append("Set-Cookie", makeSessionCookie(token));

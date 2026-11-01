@@ -7,7 +7,7 @@ import type { Capability } from "./types.ts";
 export const CAPABILITIES: readonly Capability[] = Object.freeze([
   { id: "intent-preview", label: "Intent preview & clarification", status: "verified", note: "Deterministic parser with strict validation; unit-tested." },
   { id: "link-passive", label: "Passive link check", status: "verified", note: "URL policy only (https, public host). Reports “insufficient evidence” on its own." },
-  { id: "wallet-signin", label: "Wallet sign-in", status: "planned", note: "Needs a provider with Robinhood Chain support." },
+  { id: "wallet-signin", label: "Wallet sign-in", status: "planned", note: "SIWE supports Ethereum Mainnet and Robinhood Chain; verify WalletConnect provider and wallet support in deployment." },
   { id: "route-direct", label: "Direct pool swap (Uniswap v4)", status: "planned", note: "Waiting on Phase 0 verification of real, liquid pools." },
   { id: "transaction-prepare", label: "Transaction preparation", status: "planned", note: "Authenticated API is implemented but fails closed until Phase 0 verifies the chain, assets, and an executable route." },
   { id: "route-split", label: "Split route", status: "planned", note: "Requires an executable multi-pool router." },
