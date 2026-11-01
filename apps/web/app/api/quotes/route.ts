@@ -1,4 +1,4 @@
-import { audit } from "@/lib/audit";
+import { auditFor } from "@/lib/audit-request";
 import { findAsset, isExecutableAsset } from "@vetto/asset-registry";
 import { parseDecimal, validateIntent, IntentValidationError } from "@vetto/intent-parser";
 import { collectQuotes, type QuoteAdapter } from "@vetto/quote-engine";
@@ -28,7 +28,7 @@ export async function POST(req: Request) {
   if (!tIn || !tOut) return jsonError(422, "Unknown asset.");
 
   if (!isExecutableAsset(tIn) || !isExecutableAsset(tOut)) {
-    await audit({ action: "quotes.request", intentKind: "swap", decision: "assets-unverified" });
+    await auditFor(req, { action: "quotes.request", intentKind: "swap", decision: "assets-unverified" });
     return jsonOk({
       routes: [], skipped: [],
       message: "These assets are named in the registry but their on-chain addresses are not verified yet, so no quote can be requested.",
@@ -43,6 +43,6 @@ export async function POST(req: Request) {
     },
     ADAPTERS,
   );
-  await audit({ action: "quotes.request", intentKind: "swap", decision: result.routes.length ? "routes" : "none" });
+  await auditFor(req, { action: "quotes.request", intentKind: "swap", decision: result.routes.length ? "routes" : "none" });
   return jsonOk(result);
 }

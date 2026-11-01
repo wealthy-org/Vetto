@@ -1,5 +1,5 @@
 import { getPool } from "@/lib/db";
-import { jsonError, jsonOk } from "@/lib/http";
+import { jsonError, jsonOk, limitClient } from "@/lib/http";
 import { clearSessionCookie, hashSessionToken, readSessionToken } from "@/lib/wallet-auth";
 
 interface SessionRow {
@@ -9,7 +9,10 @@ interface SessionRow {
 
 export async function GET(request: Request) {
   const token = readSessionToken(request);
-  if (!token) return jsonOk({ authenticated: false });
+  if (!token) return jsonOk({ authenticated: false }); // tanpa cookie = tanpa biaya database, tidak perlu dibatasi
+
+  const limited = await limitClient(request, "session", 120);
+  if (limited) return limited;
 
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) return jsonError(503, "Session status is temporarily unavailable.");
