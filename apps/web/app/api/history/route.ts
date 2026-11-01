@@ -3,6 +3,7 @@ import type { PoolClient } from "pg";
 import { authenticatedUserId } from "@/lib/authenticated-user";
 import { getPool } from "@/lib/db";
 import { guardJson, isRecord, jsonError, jsonOk } from "@/lib/http";
+import { findSecret, secretMessage } from "@/lib/secret-guard";
 
 const HISTORY_LIMIT = 50;
 const HISTORY_RETENTION = 100;
@@ -60,6 +61,10 @@ export async function POST(request: Request) {
 
   const prompt = guarded.body.prompt.trim();
   if (!prompt || prompt.length > 500) return jsonError(400, "Prompt must contain between 1 and 500 characters.");
+
+  // Defense in depth: never persist secrets, regardless of the input path.
+  const secret = findSecret(prompt);
+  if (secret) return jsonError(422, secretMessage(secret), { code: "SECRET_DETECTED" });
 
   const clientKey = request.headers.get("idempotency-key");
   if (!clientKey || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(clientKey)) {

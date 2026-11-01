@@ -2,10 +2,11 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { english } from "viem/accounts";
 import { findAsset } from "@vetto/asset-registry";
 import { formatUnits, parseIntent, type Intent, type ParseResult } from "@vetto/intent-parser";
 import { capabilityById, type QuoteResult } from "@vetto/quote-engine";
-import type { RiskReport } from "@vetto/safety-policy";
+import { detectSecret, secretMessage, type RiskReport } from "@vetto/safety-policy";
 import { Banker } from "./Banker";
 import { Logo, Mark } from "./Logo";
 import { StatusChip } from "./StatusChip";
@@ -19,11 +20,18 @@ type HistoryMode = "loading" | "preview" | "saved" | "error";
 
 const SUGGESTIONS = ["Swap 100 USDG to ETH", "Is fastclaim-hood.xyz safe?", "Mint the NFT at nft-mint-pass.app max 0.01 ETH"];
 const PRIVATE_COPY = "Private submission is available when the connected relay supports this network. Your transaction becomes public after confirmation.";
+const BIP39_WORDS = new Set<string>(english);
+
+class ApiError extends Error {
+  readonly code: string | undefined;
+  constructor(message: string, code?: string) { super(message); this.code = code; }
+}
+const REDACTED = "••• not sent: looked like a secret •••";
 
 async function post<T>(url: string, body: unknown): Promise<T> {
   const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-  const json = (await res.json()) as T & { error?: string };
-  if (!res.ok) throw new Error(json.error ?? `Request failed (${res.status})`);
+  const json = (await res.json()) as T & { error?: string; code?: string };
+  if (!res.ok) throw new ApiError(json.error ?? `Request failed (${res.status})`, json.code);
   return json;
 }
 
@@ -91,6 +99,7 @@ export function ChatApp() {
 
   const lastUrl = useMemo(() => [...msgs].reverse().map((m) => (m.result ? urlOf(m.result.intent) : undefined)).find(Boolean), [msgs]);
   const preview = useMemo(() => parseIntent(input, lastUrl ? { lastUrl } : {}), [input, lastUrl]);
+  const typedSecret = useMemo(() => detectSecret(input, BIP39_WORDS), [input]);
   const history = useMemo(() => historyMode === "saved"
     ? savedHistory.map((item) => ({ id: item.id, prompt: item.prompt }))
     : [...new Set(msgs.filter((m) => m.role === "user").map((m) => m.text))].reverse().map((prompt) => ({ id: prompt, prompt })),
@@ -127,7 +136,16 @@ export function ChatApp() {
   async function send(raw: string) {
     const text = raw.trim();
     if (!text || busy) return;
-    setBusy(true); setInput(""); push({ role: "user", text });
+    setInput("");
+    const local = detectSecret(text, BIP39_WORDS);
+    if (local) {
+      push({ role: "user", text: REDACTED });
+      push({ role: "banker", text: secretMessage(local) });
+      return;
+    }
+
+    setBusy(true);
+    const userMsgId = push({ role: "user", text });
     try {
       const result = await post<ParseResult>("/api/intent", { text, context: lastUrl ? { lastUrl } : {} });
       const i = result.intent;
@@ -136,6 +154,11 @@ export function ChatApp() {
       if (i.kind === "swap") patch(id, { quote: await post<QuoteResult>("/api/quotes", { intent: i }) });
       if (i.kind === "inspect") patch(id, { inspect: await post<InspectResponse>("/api/inspect", { url: i.url }) });
     } catch (e) {
+      if (e instanceof ApiError && e.code === "SECRET_DETECTED") {
+        patch(userMsgId, { text: REDACTED }); // seed phrase terdeteksi server: hapus dari transkrip
+        push({ role: "banker", text: e.message });
+        return;
+      }
       push({ role: "banker", text: `That didn’t go through: ${e instanceof Error ? e.message : "unknown error"}. Nothing was executed.` });
     } finally { setBusy(false); }
   }
@@ -199,14 +222,14 @@ export function ChatApp() {
 
           <form className="border-t border-white/8 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3" onSubmit={(e) => { e.preventDefault(); void send(input); }}>
             <div className="mx-auto max-w-2xl">
-              <p aria-live="polite" className={`mb-2 min-h-[1.25rem] truncate text-xs ${kindTone}`}>{input.trim() ? <><span className="text-white/40">I read this as: </span>{preview.label}</> : <span className="text-white/35">{preview.label}</span>}</p>
+              <p aria-live="polite" className={`mb-2 min-h-[1.25rem] truncate text-xs ${kindTone}`}>{typedSecret ? <span className="text-coral">{secretMessage(typedSecret)}</span> : input.trim() ?<><span className="text-white/40">I read this as: </span>{preview.label}</> : <span className="text-white/35">{preview.label}</span>}</p>
               <div className="glass flex items-end gap-2 rounded-2xl p-2">
                 <label htmlFor="composer" className="sr-only">Your request</label>
                 <textarea id="composer" rows={1} value={input} maxLength={500} placeholder="Swap 100 USDG to ETH…" onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void send(input); } }}
                   className="max-h-32 min-h-[2.5rem] flex-1 resize-none bg-transparent px-3 py-2 text-sm outline-none placeholder:text-white/35" />
                 <button type="button" aria-disabled="true" aria-pressed={privNote} onClick={() => setPrivNote((v) => !v)} title="Private submission" className="chip !h-10 shrink-0 cursor-not-allowed opacity-60"><IconLock className="h-3.5 w-3.5" /> Private</button>
-                <button type="submit" disabled={busy || !input.trim()} aria-label="Send" className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white text-ink transition-opacity disabled:opacity-40"><IconArrow className="h-4 w-4" /></button>
+                <button type="submit" disabled={busy || !input.trim() || !!typedSecret} aria-label="Send" className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white text-ink transition-opacity disabled:opacity-40"><IconArrow className="h-4 w-4" /></button>
               </div>
               {privNote && <p className="mt-2 text-xs text-white/50">{PRIVATE_COPY}</p>}
               <p className="mt-2 text-[11px] text-white/30">Enter sends · Shift+Enter adds a line. Nothing moves without your wallet confirmation.</p>
