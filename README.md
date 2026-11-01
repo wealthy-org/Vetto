@@ -24,9 +24,9 @@ pnpm dev           # http://localhost:3000
 Before enabling any chain integration, configure two independently operated RPC endpoints and the USDG address confirmed from an official source:
 
 ```powershell
-$env:ROBINHOOD_RPC_URL_PRIMARY = "https://rpc.solidrpc.io/ak_aec843b103a5fc6a761329a12fbf14222b9453e3924333d868a9372362ae68a5/evm/4663"
-$env:ROBINHOOD_RPC_URL_SECONDARY = "https://api.blockvectra.com/v1/robinhood_mainnet/rgw_1593c3098bb5255cb1b1ea8dcfd0d1b3a1de07c1aa1429572196dd1ce1bb5b74"
-$env:ROBINHOOD_USDG_ADDRESS = "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168"
+$env:ROBINHOOD_RPC_URL_PRIMARY = ""
+$env:ROBINHOOD_RPC_URL_SECONDARY = ""
+$env:ROBINHOOD_USDG_ADDRESS = ""
 pnpm verify:chain
 ```
 
