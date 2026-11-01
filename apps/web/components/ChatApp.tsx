@@ -14,6 +14,8 @@ import { IconArrow, IconLock } from "./icons";
 
 type InspectResponse = { host: string | null; report: RiskReport };
 type Msg = { id: number; role: "user" | "banker"; text: string; result?: ParseResult; quote?: QuoteResult; inspect?: InspectResponse; capId?: string };
+type HistoryItem = { id: string; prompt: string; createdAt: string };
+type HistoryMode = "loading" | "preview" | "saved" | "error";
 
 const SUGGESTIONS = ["Swap 100 USDG to ETH", "Is fastclaim-hood.xyz safe?", "Mint the NFT at nft-mint-pass.app max 0.01 ETH"];
 const PRIVATE_COPY = "Private submission is available when the connected relay supports this network. Your transaction becomes public after confirmation.";
@@ -35,20 +37,92 @@ export function ChatApp() {
   const [busy, setBusy] = useState(false);
   const [sheet, setSheet] = useState(false);
   const [privNote, setPrivNote] = useState(false);
+  const [savedHistory, setSavedHistory] = useState<HistoryItem[]>([]);
+  const [historyMode, setHistoryMode] = useState<HistoryMode>("loading");
+  const [historyError, setHistoryError] = useState("");
   const seq = useRef(0);
   const endRef = useRef<HTMLDivElement>(null);
+  const historyReadyRef = useRef<Promise<boolean> | null>(null);
 
   // `?ask=` pre-fills the composer. It never auto-sends: nothing runs until the person presses Enter.
   useEffect(() => { const a = params.get("ask"); if (a) setInput(a.slice(0, 500)); }, [params]);
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [msgs]);
+  useEffect(() => {
+    let resolveHistory: (authenticated: boolean) => void = () => {};
+    let active = true;
+    historyReadyRef.current = new Promise((resolve) => { resolveHistory = resolve; });
+
+    void fetch("/api/history", { cache: "no-store" }).then(async (response) => {
+      if (response.status === 401) {
+        if (active) setHistoryMode("preview");
+        resolveHistory(false);
+        return;
+      }
+      const body = await response.json() as { items?: HistoryItem[]; error?: string };
+      if (!response.ok) throw new Error(body.error ?? `History request failed (${response.status}).`);
+      if (!Array.isArray(body.items)) throw new Error("The history response was invalid.");
+      if (active) {
+        setSavedHistory(body.items);
+        setHistoryMode("saved");
+      }
+      resolveHistory(true);
+    }).catch((error: unknown) => {
+      if (active) {
+        setHistoryMode("error");
+        setHistoryError(error instanceof Error ? error.message : "Chat history is temporarily unavailable.");
+      }
+      resolveHistory(false);
+    });
+
+    return () => {
+      active = false;
+      resolveHistory(false);
+    };
+  }, []);
+  useEffect(() => {
+    const clearSavedHistory = () => {
+      setSavedHistory([]);
+      setHistoryMode("preview");
+      setHistoryError("");
+    };
+    window.addEventListener("vetto:session-ended", clearSavedHistory);
+    return () => window.removeEventListener("vetto:session-ended", clearSavedHistory);
+  }, []);
 
   const lastUrl = useMemo(() => [...msgs].reverse().map((m) => (m.result ? urlOf(m.result.intent) : undefined)).find(Boolean), [msgs]);
   const preview = useMemo(() => parseIntent(input, lastUrl ? { lastUrl } : {}), [input, lastUrl]);
-  const history = useMemo(() => [...new Set(msgs.filter((m) => m.role === "user").map((m) => m.text))].reverse(), [msgs]);
+  const history = useMemo(() => historyMode === "saved"
+    ? savedHistory.map((item) => ({ id: item.id, prompt: item.prompt }))
+    : [...new Set(msgs.filter((m) => m.role === "user").map((m) => m.text))].reverse().map((prompt) => ({ id: prompt, prompt })),
+  [historyMode, savedHistory, msgs]);
   const active = useMemo(() => [...msgs].reverse().find((m) => m.result && (m.result.intent.kind === "swap" || m.result.intent.kind === "inspect" || m.capId)), [msgs]);
 
   const push = (m: Omit<Msg, "id">) => { const id = ++seq.current; setMsgs((p) => [...p, { ...m, id }]); return id; };
   const patch = (id: number, p: Partial<Msg>) => setMsgs((all) => all.map((m) => (m.id === id ? { ...m, ...p } : m)));
+
+  async function saveHistoryPrompt(prompt: string) {
+    const authenticated = await historyReadyRef.current;
+    if (!authenticated) return;
+    try {
+      const response = await fetch("/api/history", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
+        body: JSON.stringify({ prompt }),
+      });
+      const body = await response.json() as { item?: HistoryItem; error?: string };
+      if (response.status === 401) {
+        setHistoryMode("preview");
+        setSavedHistory([]);
+        setHistoryError("Your sign-in expired. Sign in again to save history.");
+        return;
+      }
+      if (!response.ok || !body.item) throw new Error(body.error ?? `History save failed (${response.status}).`);
+      setSavedHistory((items) => [body.item!, ...items.filter((item) => item.id !== body.item!.id)].slice(0, 50));
+      setHistoryError("");
+    } catch (error) {
+      setHistoryError(error instanceof Error ? error.message : "Chat history could not be saved.");
+    }
+  }
 
   async function send(raw: string) {
     const text = raw.trim();
@@ -57,6 +131,7 @@ export function ChatApp() {
     try {
       const result = await post<ParseResult>("/api/intent", { text, context: lastUrl ? { lastUrl } : {} });
       const i = result.intent;
+      void saveHistoryPrompt(text);
       const id = push({ role: "banker", text: i.kind === "clarification" ? i.question : i.kind === "chat" ? "I can quote swaps, inspect links before you connect, and (soon) run capped burner tasks. What would you like?" : "Here’s how I read that.", result, ...(CAP_FOR[i.kind] ? { capId: CAP_FOR[i.kind]! } : {}) });
       if (i.kind === "swap") patch(id, { quote: await post<QuoteResult>("/api/quotes", { intent: i }) });
       if (i.kind === "inspect") patch(id, { inspect: await post<InspectResponse>("/api/inspect", { url: i.url }) });
@@ -82,10 +157,11 @@ export function ChatApp() {
         <nav className="hidden overflow-y-auto border-r border-white/8 p-4 text-sm lg:block" aria-label="Chats and history">
           <button type="button" onClick={() => { setMsgs([]); setInput(""); }} className="btn btn-ghost mb-5 w-full">New chat</button>
           <h2 className="mb-2 text-xs text-white/40">Chat history</h2>
-          {history.length === 0 ? <p className="text-xs text-white/35">Your requests from this session show up here. Click one to run it again.</p> : (
-            <ul className="space-y-1">{history.slice(0, 20).map((h) => (<li key={h}><button type="button" onClick={() => setInput(h)} className="w-full truncate rounded-lg px-2 py-1.5 text-left text-white/70 hover:bg-white/[.06]">{h}</button></li>))}</ul>
+          {history.length === 0 ? <p className="text-xs text-white/35">{historyMode === "saved" ? "Your saved requests will appear here." : "Your requests from this session show up here. Sign in to save them."}</p> : (
+            <ul className="space-y-1">{history.slice(0, 20).map((item) => (<li key={item.id}><button type="button" onClick={() => setInput(item.prompt)} className="w-full truncate rounded-lg px-2 py-1.5 text-left text-white/70 hover:bg-white/[.06]">{item.prompt}</button></li>))}</ul>
           )}
-          <p className="mt-6 text-[11px] leading-relaxed text-white/30">History lives in this tab only. Saved history arrives with accounts.</p>
+          {historyMode === "error" || historyError ? <p role="status" className="mt-2 text-[11px] text-peach">{historyError || "Saved history is temporarily unavailable."}</p> : null}
+          <p className="mt-6 text-[11px] leading-relaxed text-white/30">{historyMode === "saved" ? "Saved to your account. Click a request to run it again." : "Preview history lives in this tab only."}</p>
         </nav>
 
         {/* CENTER */}

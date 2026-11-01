@@ -33,6 +33,7 @@ export function SessionStatus() {
       const result = await response.json() as { authenticated: boolean; error?: string };
       if (!response.ok) throw new Error(result.error ?? `Sign-out failed (${response.status}).`);
       setSession(result);
+      window.dispatchEvent(new Event("vetto:session-ended"));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Sign-out failed.");
     }
