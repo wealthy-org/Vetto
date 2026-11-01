@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { encodeAbiParameters, keccak256, toBytes, toFunctionSelector } from "viem";
-import { discoverV4Pools, verifyChain, verifyV4Pool, UNISWAP_V4_POOL_MANAGER } from "./verify-chain.mjs";
+import {
+  discoverV4Pools,
+  verifyChain,
+  verifyV4Pool,
+  UNISWAP_V4_POOL_MANAGER,
+  UNISWAP_V4_STATE_VIEW,
+} from "./verify-chain.mjs";
 
 const TOKEN = "0x1234567890123456789012345678901234567890";
 const ENV = {
@@ -98,6 +104,8 @@ function poolMockFetch({
   hookCode = "0x",
   hooksAddress = "0x0000000000000000000000000000000000000000",
   initialized = true,
+  stateViewCode = "0x6004",
+  stateViewMismatch = false,
 } = {}) {
   const zero = "0x0000000000000000000000000000000000000000";
   const key = [
@@ -114,6 +122,8 @@ function poolMockFetch({
   ));
   const liquiditySlot = `0x${(BigInt(stateSlot) + 3n).toString(16).padStart(64, "0")}`;
   const selector = toFunctionSelector("extsload(bytes32)");
+  const slot0Selector = toFunctionSelector("getSlot0(bytes32)");
+  const liquiditySelector = toFunctionSelector("getLiquidity(bytes32)");
   const primaryTick = 42n;
 
   return async (url, init) => {
@@ -123,7 +133,30 @@ function poolMockFetch({
     let result;
     if (method === "eth_chainId") result = "0x1237";
     else if (method === "eth_getCode") {
-      result = params[0].toLowerCase() === UNISWAP_V4_POOL_MANAGER.toLowerCase() ? "0x6001" : hookCode;
+      result = params[0].toLowerCase() === UNISWAP_V4_POOL_MANAGER.toLowerCase()
+        ? "0x6001"
+        : params[0].toLowerCase() === UNISWAP_V4_STATE_VIEW.toLowerCase() ? stateViewCode : hookCode;
+    } else if (method === "eth_call" && params[0].to.toLowerCase() === UNISWAP_V4_STATE_VIEW.toLowerCase()) {
+      if (params[0].data.startsWith(slot0Selector)) {
+        const tick = secondary ? secondaryTick : primaryTick;
+        const sqrtPriceX96 = initialized ? 1n << 96n : 0n;
+        const lpFee = 3000n;
+        const actualTick = secondary && stateViewMismatch ? tick + 1n : tick;
+        result = encodeAbiParameters(
+          [
+            { type: "uint160" },
+            { type: "int24" },
+            { type: "uint24" },
+            { type: "uint24" },
+          ],
+          [sqrtPriceX96, actualTick, 0n, lpFee],
+        );
+      } else if (params[0].data.startsWith(liquiditySelector)) {
+        const liquidity = secondary ? secondaryLiquidity : primaryLiquidity;
+        result = encodeAbiParameters([{ type: "uint128" }], [liquidity]);
+      } else {
+        throw new Error("Unexpected StateView function");
+      }
     } else if (method === "eth_call" && params[0].data.startsWith(selector)) {
       if (params[0].data.toLowerCase() === `${selector}${stateSlot.slice(2)}`.toLowerCase()) {
         const tick = secondary ? secondaryTick : primaryTick;
@@ -166,6 +199,20 @@ test("rejects pool state that differs between providers", async () => {
   await assert.rejects(
     verifyV4Pool({ ...POOL, fetchImpl: poolMockFetch({ secondaryTick: 43n }) }),
     /disagree on PoolManager, hook, or pool state/,
+  );
+});
+
+test("cross-checks StateView results against PoolManager storage", async () => {
+  await assert.rejects(
+    verifyV4Pool({ ...POOL, fetchImpl: poolMockFetch({ stateViewMismatch: true }) }),
+    /StateView disagrees with PoolManager storage/,
+  );
+});
+
+test("requires the official StateView contract to be deployed", async () => {
+  await assert.rejects(
+    verifyV4Pool({ ...POOL, fetchImpl: poolMockFetch({ stateViewCode: "0x" }) }),
+    /no Uniswap v4 StateView bytecode/,
   );
 });
 

@@ -1,13 +1,23 @@
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { decodeAbiParameters, encodeAbiParameters, getAddress, keccak256, toFunctionSelector } from "viem";
+import {
+  decodeAbiParameters,
+  encodeAbiParameters,
+  getAddress,
+  keccak256,
+  toFunctionSelector,
+} from "viem";
 
 export const ROBINHOOD_CHAIN_ID = 4663n;
 // Listed in Uniswap's public deployment feed: https://developers.uniswap.org/deployments.json
 export const UNISWAP_V4_POOL_MANAGER = "0x8366a39CC670B4001A1121B8F6A443A643e40951";
+// Published in Uniswap/v4-periphery test/ReservesLens.fork.t.sol.
+export const UNISWAP_V4_STATE_VIEW = "0xF3334192D15450CdD385c8B70e03f9A6bD9E673b";
 const POOLS_SLOT = 6n;
 const LIQUIDITY_OFFSET = 3n;
 const EXTSLOAD_SELECTOR = toFunctionSelector("extsload(bytes32)");
+const STATE_VIEW_SLOT0_SELECTOR = toFunctionSelector("getSlot0(bytes32)");
+const STATE_VIEW_LIQUIDITY_SELECTOR = toFunctionSelector("getLiquidity(bytes32)");
 const INITIALIZE_TOPIC = keccak256(new TextEncoder().encode(
   "Initialize(bytes32,address,address,uint24,int24,address,uint160,int24)",
 ));
@@ -434,15 +444,24 @@ export async function verifyV4Pool({
   ];
 
   const states = await Promise.all(providers.map(async (provider) => {
-    const [chainIdRaw, managerCode, slot0Raw, liquidityRaw, hooksCode] = await Promise.all([
+    const [chainIdRaw, managerCode, stateViewCode, slot0Raw, liquidityRaw, stateViewSlot0Raw, stateViewLiquidityRaw, hooksCode] = await Promise.all([
       rpcCall(provider.url, "eth_chainId", [], fetchImpl),
       rpcCall(provider.url, "eth_getCode", [UNISWAP_V4_POOL_MANAGER, blockTag], fetchImpl),
+      rpcCall(provider.url, "eth_getCode", [UNISWAP_V4_STATE_VIEW, blockTag], fetchImpl),
       rpcCall(provider.url, "eth_call", [
         { to: UNISWAP_V4_POOL_MANAGER, data: `${EXTSLOAD_SELECTOR}${stateSlot.slice(2)}` },
         blockTag,
       ], fetchImpl),
       rpcCall(provider.url, "eth_call", [
         { to: UNISWAP_V4_POOL_MANAGER, data: `${EXTSLOAD_SELECTOR}${liquiditySlot.slice(2)}` },
+        blockTag,
+      ], fetchImpl),
+      rpcCall(provider.url, "eth_call", [
+        { to: UNISWAP_V4_STATE_VIEW, data: `${STATE_VIEW_SLOT0_SELECTOR}${poolId.slice(2)}` },
+        blockTag,
+      ], fetchImpl),
+      rpcCall(provider.url, "eth_call", [
+        { to: UNISWAP_V4_STATE_VIEW, data: `${STATE_VIEW_LIQUIDITY_SELECTOR}${poolId.slice(2)}` },
         blockTag,
       ], fetchImpl),
       hooks.hooksAddress.toLowerCase() === "0x0000000000000000000000000000000000000000"
@@ -455,17 +474,44 @@ export async function verifyV4Pool({
     if (typeof managerCode !== "string" || !/^0x[0-9a-f]+$/i.test(managerCode)) {
       throw new Error(`${provider.name} RPC returned invalid PoolManager code.`);
     }
+    if (typeof stateViewCode !== "string" || !/^0x[0-9a-f]+$/i.test(stateViewCode) || stateViewCode.toLowerCase() === "0x") {
+      throw new Error(`${provider.name} RPC has no Uniswap v4 StateView bytecode at the shared block.`);
+    }
     if (hooks.hooksAddress.toLowerCase() !== "0x0000000000000000000000000000000000000000"
       && (typeof hooksCode !== "string" || !/^0x[0-9a-f]+$/i.test(hooksCode) || hooksCode.toLowerCase() === "0x")) {
       throw new Error(`${provider.name} RPC has no hooks contract bytecode at the shared block.`);
     }
+    const state = decodePoolState(slot0Raw, liquidityRaw);
+    if (typeof stateViewSlot0Raw !== "string" || !/^0x[0-9a-f]{256}$/i.test(stateViewSlot0Raw)
+      || typeof stateViewLiquidityRaw !== "string" || !/^0x[0-9a-f]{64}$/i.test(stateViewLiquidityRaw)) {
+      throw new Error(`${provider.name} RPC returned invalid StateView data.`);
+    }
+    const [viewSqrtPrice, viewTick, viewProtocolFee, viewLpFee] = decodeAbiParameters(
+      [
+        { type: "uint160" },
+        { type: "int24" },
+        { type: "uint24" },
+        { type: "uint24" },
+      ],
+      stateViewSlot0Raw,
+    );
+    const viewLiquidity = decodeAbiParameters([{ type: "uint128" }], stateViewLiquidityRaw)[0];
+    if (viewSqrtPrice !== state.sqrtPriceX96
+      || BigInt(viewTick) !== state.tick
+      || BigInt(viewProtocolFee) !== state.protocolFee
+      || BigInt(viewLpFee) !== state.lpFee
+      || viewLiquidity !== state.activeLiquidity) {
+      throw new Error(`${provider.name} RPC StateView disagrees with PoolManager storage for pool ${poolId}.`);
+    }
     return {
       managerCode: managerCode.toLowerCase(),
+      stateViewCode: stateViewCode.toLowerCase(),
       hooksCode: hooksCode.toLowerCase(),
-      state: decodePoolState(slot0Raw, liquidityRaw),
+      state,
     };
   }));
   if (states[0].managerCode !== states[1].managerCode
+    || states[0].stateViewCode !== states[1].stateViewCode
     || states[0].hooksCode !== states[1].hooksCode
     || JSON.stringify(Object.fromEntries(Object.entries(states[0].state).map(([key, value]) => [key, value.toString()])))
       !== JSON.stringify(Object.fromEntries(Object.entries(states[1].state).map(([key, value]) => [key, value.toString()])))) {
@@ -480,6 +526,7 @@ export async function verifyV4Pool({
     fee: hooks.fee.toString(),
     tickSpacing: hooks.tickSpacing.toString(),
     hooks: hooks.hooksAddress,
+    stateView: UNISWAP_V4_STATE_VIEW,
     commonBlock: String(commonBlock),
     initialized,
     currentTick: state.tick.toString(),

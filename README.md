@@ -37,14 +37,15 @@ The checker validates chain ID 4663 on both RPCs, compares the Uniswap v4 PoolMa
 Find the PoolManager deployment block from the [Blockscout contract page](https://robinhoodchain.blockscout.com/address/0x8366a39CC670B4001A1121B8F6A443A643e40951), set it as a trusted starting block, then scan a bounded range. The scan is limited to 250,000 blocks per run; if the deployment is older than that, set an end block and run consecutive ranges. A scan only establishes results for the printed block range.
 
 ```powershell
-$env:ROBINHOOD_POOL_SCAN_FROM_BLOCK = "0x4e59b44847b379578588920cA78FbF26c0B4956C"
-$env:ROBINHOOD_POOL_SCAN_TO_BLOCK = "0x4fb28d4935866f462582c6c931c6f2705e55f5be5eb178c7d8d9329a95c44c41"
+$env:ROBINHOOD_POOL_SCAN_FROM_BLOCK = "<decimal-start-block>"
+$env:ROBINHOOD_POOL_SCAN_TO_BLOCK = "<decimal-end-block>"
 pnpm discover:pools
 ```
 
 Discovery compares matching Uniswap v4 `Initialize` logs across both RPCs, decodes the actual pool key, and checks current initialization state and active liquidity at the common block. It does not estimate a trade, validate liquidity at a specific size, or prepare/submit a transaction. Keep quotes and execution disabled until an executable quote and simulation are independently verified.
 
 To inspect a single pool key when you already have its verified values, set `ROBINHOOD_POOL_FEE`, `ROBINHOOD_POOL_TICK_SPACING`, and `ROBINHOOD_POOL_HOOKS_ADDRESS`, then run `pnpm verify:pool`.
+The checker compares PoolManager storage with the official Uniswap v4 StateView (`getSlot0` and `getLiquidity`) at the same block on both RPCs. The Robinhood StateView address is listed in [Uniswap's Robinhood fork test](https://github.com/Uniswap/v4-periphery/blob/c6e4754dab11bd38c6f08ac51c3c868569e93d64/test/ReservesLens.fork.t.sol). This remains read-only verification; it is not a quote or a transaction safety check.
 
 ## What is real today
 - Landing page and animations, chat shell, docs, WalletConnect EOA sign-in using an Ethereum Mainnet (chain ID 1) message, one-time SIWE challenges, and database-backed sessions (requires `DATABASE_URL`, migrations, and `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`).
