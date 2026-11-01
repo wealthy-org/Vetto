@@ -2,19 +2,26 @@ import { NextResponse, type NextRequest } from "next/server";
 
 /**
  * Per-request CSP nonce + hardening headers.
- * Trade-off: nonce CSP makes pages dynamically rendered. Wallet/RPC hosts must be added to
- * `connect-src` deliberately when sign-in is wired up — never wildcard it.
+ * Trade-off: nonce CSP makes pages dynamically rendered. WalletConnect hosts are explicit and
+ * enabled only when the project ID is configured; never wildcard them.
  */
 export function middleware(req: NextRequest) {
   const nonce = btoa(crypto.randomUUID());
   const dev = process.env.NODE_ENV !== "production";
+  const walletConnectConfigured = Boolean(process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID);
+  const walletConnectConnectSrc = walletConnectConfigured
+    ? " https://relay.walletconnect.com wss://relay.walletconnect.com wss://relay.walletconnect.org https://rpc.walletconnect.org https://pulse.walletconnect.org https://explorer-api.walletconnect.com https://api.web3modal.org"
+    : "";
+  const walletConnectImgSrc = walletConnectConfigured ? " https://explorer-api.walletconnect.com" : "";
+  const walletConnectFrameSrc = walletConnectConfigured ? " https://verify.walletconnect.org" : "";
   const csp = [
     "default-src 'self'",
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${dev ? " 'unsafe-eval'" : ""}`,
     "style-src 'self' 'unsafe-inline'", // GSAP/React write inline styles; no inline <script> is allowed
-    "img-src 'self' data: blob:",
-    "font-src 'self' data:",
-    "connect-src 'self'",
+    `img-src 'self' data: blob:${walletConnectImgSrc}`,
+    `font-src 'self' data:${walletConnectConfigured ? " https://fonts.reown.com" : ""}`,
+    `connect-src 'self'${walletConnectConnectSrc}`,
+    `frame-src 'self'${walletConnectFrameSrc}`,
     "object-src 'none'",
     "base-uri 'none'",
     "form-action 'self'",

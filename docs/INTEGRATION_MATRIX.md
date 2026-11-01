@@ -13,7 +13,7 @@ It does not submit transactions, contact inspected sites, or claim any chain ven
 | Uniswap v4 direct pool adapter | planned | Real liquid pool; simulation passes; testnet/fork tx | |
 | Split route / solver / RFQ | planned | Real executable counterparties | |
 | Private relay | blocked | A relay that accepts Robinhood Chain txs and is not mirrored to the public mempool | |
-| Wallet sign-in | planned | wagmi/WalletConnect with chain support; add RPC hosts to CSP `connect-src` | |
+| Wallet sign-in | planned | SIWE EOA auth uses Ethereum Mainnet (chain ID 1) for message signing only; configure a WalletConnect project ID and run migrations. This does not enable Robinhood Chain execution. | |
 | Social sign-in | planned | Audited provider; custodial labelling | |
 | Simulation provider | planned | Asset + allowance deltas on this chain | |
 | Isolated browser fleet | planned | Per-session microVM/container, egress filter, verified teardown | |

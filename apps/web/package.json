@@ -15,11 +15,13 @@
     "@vetto/intent-parser": "workspace:*",
     "@vetto/quote-engine": "workspace:*",
     "@vetto/safety-policy": "workspace:*",
+    "@walletconnect/ethereum-provider": "^2.26.0",
     "gsap": "^3.12.7",
     "next": "^15.1.0",
     "pg": "^8.23.1",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "viem": "^2.57.14"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

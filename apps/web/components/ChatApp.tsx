@@ -9,6 +9,7 @@ import type { RiskReport } from "@vetto/safety-policy";
 import { Banker } from "./Banker";
 import { Logo, Mark } from "./Logo";
 import { StatusChip } from "./StatusChip";
+import { SessionStatus } from "./SessionStatus";
 import { IconArrow, IconLock } from "./icons";
 
 type InspectResponse = { host: string | null; report: RiskReport };
@@ -71,8 +72,8 @@ export function ChatApp() {
       <header className="flex items-center justify-between border-b border-white/8 px-4 py-3 text-sm">
         <div className="flex items-center gap-4"><Link href="/"><Logo /></Link><span className="chip hidden sm:inline-flex"><i className="h-2 w-2 rounded-full bg-mint" />Robinhood Chain</span></div>
         <div className="flex items-center gap-4">
-          <span className="chip !border-lilac/30 text-lilac">Preview mode · signing off</span>
-          <Link href="/sign-in" className="text-white/70 hover:text-white">Sign in</Link><Link href="/docs" className="hidden text-white/70 hover:text-white sm:inline">Docs</Link>
+          <SessionStatus />
+          <Link href="/docs" className="hidden text-white/70 hover:text-white sm:inline">Docs</Link>
         </div>
       </header>
 

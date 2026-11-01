@@ -1,13 +1,10 @@
 import Link from "next/link";
 import { Banker, SpeechBubble } from "./Banker";
 import { Logo } from "./Logo";
-import { StatusChip } from "./StatusChip";
-import { IconLock } from "./icons";
+import { WalletConnectSignIn } from "./WalletConnectSignIn";
 
 /**
- * Sign-in UI. Providers are NOT wired yet, so every method is disabled and labelled "Planned".
- * We never fake a login. Wiring (wagmi/WalletConnect or an audited social provider) replaces the
- * disabled controls; the rules shown here (sign-in ≠ permission to trade) must stay true.
+ * WalletConnect creates a wallet-backed session only; the session never grants transaction authority.
  */
 export function AuthShell({ mode }: { mode: "sign-in" | "sign-up" }) {
   const up = mode === "sign-up";
@@ -28,19 +25,17 @@ export function AuthShell({ mode }: { mode: "sign-in" | "sign-up" }) {
           <h1 id="auth-h" className="h-display mt-1 text-4xl">{up ? "Meet your banker." : "Back to your banker."}</h1>
 
           <div className="mt-6 space-y-3">
-            <button type="button" disabled className="flex w-full items-center gap-3 rounded-xl border border-white/10 bg-white/[.04] px-4 py-3 text-left text-sm font-medium opacity-70">
-              <IconLock className="h-4 w-4" /> Connect a wallet <span className="ml-auto"><StatusChip status="planned" /></span>
-            </button>
-            <p className="text-center text-[11px] text-white/35">or use email</p>
-            <form className="flex gap-2" aria-label="Email sign-in (not available yet)" onSubmit={(e) => e.preventDefault()}>
+            <WalletConnectSignIn mode={mode} />
+            <p className="text-center text-[11px] text-white/35">Email sign-in is planned</p>
+            <div className="flex gap-2">
               <label htmlFor="email" className="sr-only">Email</label>
               <input id="email" type="email" disabled placeholder="you@example.com" className="min-w-0 flex-1 rounded-xl border border-white/10 bg-white/[.03] px-3 py-2.5 text-sm opacity-70" />
-              <button type="submit" disabled className="btn btn-ghost opacity-70">Send code</button>
-            </form>
+              <button type="button" disabled className="btn btn-ghost opacity-70">Send code</button>
+            </div>
           </div>
 
           <div className="mt-5 rounded-xl border border-white/10 bg-white/[.03] p-4 text-xs leading-relaxed text-white/60">
-            Sign-in providers aren’t connected in this build, so no account can be created yet. You can look around the app in preview mode: nothing can be signed there.
+            Wallet sign-in uses an Ethereum Mainnet message only to create a browser session; it does not authorize or send a transaction. App execution on Robinhood Chain is not available. Email sign-in is not available yet. You can still look around in preview mode.
             <Link href="/app" className="btn btn-primary mt-3 w-full">Continue in preview</Link>
           </div>
 
