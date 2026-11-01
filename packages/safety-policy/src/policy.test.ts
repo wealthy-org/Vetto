@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { checkPublicUrl, checkResolvedIps, evaluateApproval, buildReport, bandFromScore, isPublicIp } from "./index.ts";
+import { checkPublicUrl, checkResolvedIps, evaluateApproval, buildReport, bandFromScore, findBrandLookalikes, isPublicIp } from "./index.ts";
 
 test("SSRF: private, loopback, metadata and encoded IPs are rejected", () => {
   const bad = [
@@ -19,6 +19,17 @@ test("SSRF: ordinary public https hosts pass and fragments are dropped", () => {
   if (r.ok) { assert.equal(r.host, "example-dex.app"); assert.equal(r.url.hash, ""); }
   assert.ok(checkPublicUrl("https://[2606:4700:4700::1111]/").ok);
   assert.ok(isPublicIp("8.8.8.8"));
+});
+
+test("brand lookalike heuristic finds one-character domain typos without classifying exact names", () => {
+  assert.deepEqual(findBrandLookalikes("r0binhood-login.example"), [
+    { label: "r0binhood", brand: "robinhood" },
+  ]);
+  assert.deepEqual(findBrandLookalikes("robinhoo.com"), [
+    { label: "robinhoo", brand: "robinhood" },
+  ]);
+  assert.deepEqual(findBrandLookalikes("robinhood.com"), []);
+  assert.deepEqual(findBrandLookalikes("example-dex.app"), []);
 });
 
 test("DNS rebinding: one private answer rejects the whole set", () => {

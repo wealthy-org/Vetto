@@ -83,7 +83,7 @@ test("POST /api/execute/prepare: requires a valid idempotency key and authentica
   assert.deepEqual(await j(response), { error: "Sign in before preparing a transaction." });
 });
 
-test("POST /api/inspect: SSRF targets rejected; public link → 'insufficient evidence', never 'low concern'", async () => {
+test("POST /api/inspect: rejects SSRF targets and reports possible brand lookalikes cautiously", async () => {
   for (const u of ["https://169.254.169.254/latest", "https://localhost/", "https://2130706433/", "http://example.com"]) {
     const b = await j(await inspect(post("/api/inspect", { url: u })));
     assert.equal(b.host, null, u);
@@ -93,6 +93,12 @@ test("POST /api/inspect: SSRF targets rejected; public link → 'insufficient ev
   assert.equal(ok.host, "demo-dex.app");
   assert.equal(ok.report.band, "insufficient evidence");
   assert.ok(ok.report.checksUnavailable.length > 0);
+
+  const lookalike = await j(await inspect(post("/api/inspect", { url: "https://r0binhood-login.example" })));
+  assert.equal(lookalike.host, "r0binhood-login.example");
+  assert.equal(lookalike.report.band, "insufficient evidence");
+  assert.equal(lookalike.report.findings[0].title, "Possible brand lookalike");
+  assert.match(lookalike.report.findings[0].uncertainty, /heuristic only/);
 });
 
 test("GET /api/capabilities: no external capability or asset is claimed as verified", async () => {

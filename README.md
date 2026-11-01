@@ -52,6 +52,7 @@ The checker compares PoolManager storage with the official Uniswap v4 StateView 
 - Signed-in users can view read-only ETH/USDG balances at a shared Robinhood Chain block, compared across both configured RPCs. The USDG address must be configured; symbol/decimals checks do not prove token ownership or official status.
 - Authenticated per-user chat prompt history at `/api/history`, with idempotent writes, a 100-entry retention cap, and a mobile history drawer. Preview-mode prompts remain in the current tab only.
 - Intent preview + clarification, passive link policy check, honest "no route yet" quotes.
+- Passive link checks flag blocked URL patterns, punycode, and simple lookalikes of selected crypto brands. These are heuristic signals only; target sites are not contacted and no safety guarantee is made.
 - **No** token execution, **no** live quotes: Phase 0 verification is still open. Sign-in is not transaction approval. Email/social login, contract wallets, and wallet-based execution are not implemented. See `docs/INTEGRATION_MATRIX.md`.
 
 ## Wallet sign-in setup

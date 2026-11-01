@@ -21,7 +21,7 @@ It does not submit transactions, contact inspected sites, or claim any chain ven
 | Isolated browser fleet | planned | Per-session microVM/container, egress filter, verified teardown | |
 | Burner signer | planned | Non-exportable / enclaved signer with spend ceiling, or wallet-controlled account | |
 | Typed intent API | verified | Deterministic parser and validation tests | |
-| Passive link inspection API | verified | Static HTTPS/public-host checks; no request is sent to the destination | |
+| Passive link inspection API | verified | Static HTTPS/public-host checks and cautious punycode/one-character brand lookalike warnings; no request is sent to the destination and warnings do not prove malicious intent | |
 | Quote API | planned | Returns no routes until an executable adapter and asset addresses are verified | |
 | Transaction preparation | planned | Authenticated and idempotent API fails closed; enable unsigned payloads only after verified assets, route, simulation, and audit tests | |
 | Production rate limiting | planned | Postgres-backed fixed-window limiter is implemented, but not enabled until `DATABASE_URL`, migrations, and a non-default `RATE_LIMIT_SALT` are configured and tested against the deployment DB | |

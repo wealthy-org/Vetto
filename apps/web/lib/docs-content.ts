@@ -24,7 +24,7 @@ export const DOCS: DocSection[] = [
   { id: "dapp-checker", group: "Features", title: "dApp safety checker",
     paragraphs: [
       "Paste a link. Vetto runs passive checks first. When the sandbox is enabled, it visits the site on a single-use machine with a throwaway wallet holding nothing of value, captures every approval, signature and network request, and simulates what they would do.",
-      "The result is one of low concern, caution, dangerous, or insufficient evidence. It is a heuristic, never a certification that a site is safe. Today only the passive link check is live, and on its own it reports insufficient evidence.",
+      "The passive check can flag blocked URL patterns, punycode, and one-character lookalikes of selected brands. These are heuristic signals, never a certification or proof of malicious intent. Today no target site is contacted; the report remains insufficient evidence because domain ownership, TLS, contracts and active behavior are not checked.",
     ] },
   { id: "agent-tasks", group: "Features", title: "Agent tasks (burner wallet)",
     paragraphs: ["Ask Vetto to mint or claim. It uses a separate burner wallet that you fund with a deliberately small, fixed amount, so the worst case is capped. Before anything runs you see the simulation, exact fees, target contract, expected output and approval scope."],
