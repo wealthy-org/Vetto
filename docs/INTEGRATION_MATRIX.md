@@ -14,6 +14,7 @@ It does not submit transactions, contact inspected sites, or claim any chain ven
 | Split route / solver / RFQ | planned | Real executable counterparties | |
 | Private relay | blocked | A relay that accepts Robinhood Chain txs and is not mirrored to the public mempool | |
 | Wallet sign-in | planned | SIWE EOA auth accepts chain-bound login messages from Ethereum Mainnet (1) or Robinhood Chain (4663); configure a WalletConnect project ID, run migrations, and test actual wallet support in deployment. This does not enable Robinhood Chain execution. | |
+| Wallet balances | planned | Authenticated read-only ETH/USDG balances at a common block, compared across two RPCs; verify the configured USDG address against trusted official sources before treating its identity as verified. | |
 | Per-user chat history | verified | Authenticated GET/POST/DELETE at `/api/history`; idempotent writes, bounded retention, and user-scoped item/all-history deletion including cached responses; preview history remains in-tab | |
 | Social sign-in | planned | Audited provider; custodial labelling | |
 | Simulation provider | planned | Asset + allowance deltas on this chain | |

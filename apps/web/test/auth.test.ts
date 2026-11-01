@@ -5,6 +5,7 @@ import { POST as verify } from "../app/api/auth/verify/route.ts";
 import { GET as session } from "../app/api/auth/session/route.ts";
 import { POST as logout } from "../app/api/auth/logout/route.ts";
 import { DELETE as deleteHistory, GET as history, POST as saveHistory } from "../app/api/history/route.ts";
+import { GET as balances } from "../app/api/balances/route.ts";
 
 const BASE = "http://localhost:3000";
 let requestId = 0;
@@ -48,6 +49,11 @@ test("session status without a cookie is explicitly unauthenticated", async () =
   const response = await session(new Request(`${BASE}/api/auth/session`));
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { authenticated: false });
+});
+
+test("wallet balances are private and require a valid session", async () => {
+  const response = await balances(new Request(`${BASE}/api/balances`));
+  assert.equal(response.status, 401);
 });
 
 test("sign-out without a session clears the cookie and remains idempotent", async () => {
