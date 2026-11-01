@@ -50,7 +50,7 @@ The checker compares PoolManager storage with the official Uniswap v4 StateView 
 ## What is real today
 - Landing page and animations, chat shell, docs, WalletConnect EOA sign-in using a chain-bound message on Ethereum Mainnet (chain ID 1) or Robinhood Chain (4663), one-time SIWE challenges, and database-backed sessions (requires `DATABASE_URL`, migrations, and `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`).
 - Signed-in users can view read-only ETH/USDG balances at a shared Robinhood Chain block, compared across both configured RPCs. The USDG address must be configured; symbol/decimals checks do not prove token ownership or official status.
-- Authenticated per-user chat prompt history at `/api/history`, with idempotent writes and a 100-entry retention cap. Preview-mode prompts remain in the current tab only.
+- Authenticated per-user chat prompt history at `/api/history`, with idempotent writes, a 100-entry retention cap, and a mobile history drawer. Preview-mode prompts remain in the current tab only.
 - Intent preview + clarification, passive link policy check, honest "no route yet" quotes.
 - **No** token execution, **no** live quotes: Phase 0 verification is still open. Sign-in is not transaction approval. Email/social login, contract wallets, and wallet-based execution are not implemented. See `docs/INTEGRATION_MATRIX.md`.
 

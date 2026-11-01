@@ -17,6 +17,7 @@ import { IconArrow, IconLock } from "./icons";
 type InspectResponse = { host: string | null; report: RiskReport };
 type Msg = { id: number; role: "user" | "banker"; text: string; result?: ParseResult; quote?: QuoteResult; inspect?: InspectResponse; capId?: string };
 type HistoryItem = { id: string; prompt: string; createdAt: string };
+type HistoryEntry = { id: string; prompt: string };
 type HistoryMode = "loading" | "preview" | "saved" | "error";
 
 const SUGGESTIONS = ["Swap 100 USDG to ETH", "Is fastclaim-hood.xyz safe?", "Mint the NFT at nft-mint-pass.app max 0.01 ETH"];
@@ -45,6 +46,7 @@ export function ChatApp() {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [sheet, setSheet] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [privNote, setPrivNote] = useState(false);
   const [savedHistory, setSavedHistory] = useState<HistoryItem[]>([]);
   const [historyMode, setHistoryMode] = useState<HistoryMode>("loading");
@@ -52,6 +54,8 @@ export function ChatApp() {
   const [historyAction, setHistoryAction] = useState<string | null>(null);
   const seq = useRef(0);
   const endRef = useRef<HTMLDivElement>(null);
+  const historyTriggerRef = useRef<HTMLButtonElement>(null);
+  const historyCloseRef = useRef<HTMLButtonElement>(null);
   const historyReadyRef = useRef<Promise<boolean> | null>(null);
 
   // `?ask=` pre-fills the composer. It never auto-sends: nothing runs until the person presses Enter.
@@ -90,6 +94,20 @@ export function ChatApp() {
     };
   }, []);
   useEffect(() => {
+    if (!historyOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setHistoryOpen(false);
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    document.body.style.overflow = "hidden";
+    historyCloseRef.current?.focus();
+    return () => {
+      document.removeEventListener("keydown", closeOnEscape);
+      document.body.style.overflow = "";
+      historyTriggerRef.current?.focus();
+    };
+  }, [historyOpen]);
+  useEffect(() => {
     const clearSavedHistory = () => {
       setSavedHistory([]);
       setHistoryMode("preview");
@@ -106,6 +124,15 @@ export function ChatApp() {
     ? savedHistory.map((item) => ({ id: item.id, prompt: item.prompt }))
     : [...new Set(msgs.filter((m) => m.role === "user").map((m) => m.text))].reverse().map((prompt) => ({ id: prompt, prompt })),
   [historyMode, savedHistory, msgs]);
+  const selectHistory = (prompt: string) => {
+    setInput(prompt);
+    setHistoryOpen(false);
+  };
+  const startNewChat = () => {
+    setMsgs([]);
+    setInput("");
+    setHistoryOpen(false);
+  };
   const active = useMemo(() => [...msgs].reverse().find((m) => m.result && (m.result.intent.kind === "swap" || m.result.intent.kind === "inspect" || m.capId)), [msgs]);
 
   const push = (m: Omit<Msg, "id">) => { const id = ++seq.current; setMsgs((p) => [...p, { ...m, id }]); return id; };
@@ -211,6 +238,17 @@ export function ChatApp() {
       <header className="flex items-center justify-between border-b border-white/8 px-4 py-3 text-sm">
         <div className="flex items-center gap-4"><Link href="/"><Logo /></Link><span className="chip hidden sm:inline-flex"><i className="h-2 w-2 rounded-full bg-mint" />Robinhood Chain</span></div>
         <div className="flex items-center gap-4">
+          <button
+            ref={historyTriggerRef}
+            type="button"
+            onClick={() => setHistoryOpen(true)}
+            aria-label={`Open chat history (${history.length})`}
+            aria-haspopup="dialog"
+            aria-expanded={historyOpen}
+            className="text-sm text-white/70 hover:text-white lg:hidden"
+          >
+            History <span className="text-white/40">({history.length})</span>
+          </button>
           <WalletBalances />
           <SessionStatus />
           <Link href="/docs" className="hidden text-white/70 hover:text-white sm:inline">Docs</Link>
@@ -220,44 +258,59 @@ export function ChatApp() {
       <div className="grid min-h-0 flex-1 lg:grid-cols-[230px_minmax(0,1fr)_340px]">
         {/* LEFT RAIL */}
         <nav className="hidden overflow-y-auto border-r border-white/8 p-4 text-sm lg:block" aria-label="Chats and history">
-          <button type="button" onClick={() => { setMsgs([]); setInput(""); }} className="btn btn-ghost mb-5 w-full">New chat</button>
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <h2 className="text-xs text-white/40">Chat history</h2>
-            {historyMode === "saved" && savedHistory.length > 0 && (
-              <button
-                type="button"
-                onClick={confirmClearSavedHistory}
-                disabled={historyAction !== null}
-                className="text-[11px] text-white/45 hover:text-peach disabled:opacity-50"
-              >
-                {historyAction === "clear-all" ? "Clearing…" : "Clear all"}
-              </button>
-            )}
-          </div>
-          {history.length === 0 ? <p className="text-xs text-white/35">{historyMode === "saved" ? "Your saved requests will appear here." : "Your requests from this session show up here. Sign in to save them."}</p> : (
-            <ul className="space-y-1">{history.slice(0, 20).map((item) => {
-              const savedItem = historyMode === "saved" ? savedHistory.find((entry) => entry.id === item.id) : undefined;
-              return (
-                <li key={item.id} className="flex items-center gap-1">
-                  <button type="button" onClick={() => setInput(item.prompt)} className="min-w-0 flex-1 truncate rounded-lg px-2 py-1.5 text-left text-white/70 hover:bg-white/[.06]">{item.prompt}</button>
-                  {savedItem && (
-                    <button
-                      type="button"
-                      onClick={() => confirmDeleteHistoryItem(savedItem)}
-                      disabled={historyAction !== null}
-                      aria-label={`Delete saved request: ${savedItem.prompt}`}
-                      className="shrink-0 rounded px-2 py-1 text-xs text-white/35 hover:text-peach disabled:opacity-50"
-                    >
-                      {historyAction === savedItem.id ? "…" : "×"}
-                    </button>
-                  )}
-                </li>
-              );
-            })}</ul>
-          )}
-          {historyMode === "error" || historyError ? <p role="status" className="mt-2 text-[11px] text-peach">{historyError || "Saved history is temporarily unavailable."}</p> : null}
-          <p className="mt-6 text-[11px] leading-relaxed text-white/30">{historyMode === "saved" ? "Saved to your account. Click a request to run it again." : "Preview history lives in this tab only."}</p>
+          <button type="button" onClick={startNewChat} className="btn btn-ghost mb-5 w-full">New chat</button>
+          <HistoryContent
+            history={history}
+            savedHistory={savedHistory}
+            mode={historyMode}
+            error={historyError}
+            action={historyAction}
+            onSelect={selectHistory}
+            onDelete={confirmDeleteHistoryItem}
+            onClear={confirmClearSavedHistory}
+          />
         </nav>
+
+        {historyOpen && (
+          <div className="fixed inset-0 z-50 lg:hidden" role="presentation">
+            <button
+              type="button"
+              onClick={() => setHistoryOpen(false)}
+              aria-label="Close chat history"
+              className="absolute inset-0 bg-black/65"
+            />
+            <aside
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="mobile-history-title"
+              className="relative flex h-full w-[min(22rem,88vw)] flex-col overflow-y-auto border-r border-white/10 bg-panel p-4 shadow-2xl"
+            >
+              <div className="mb-5 flex items-center justify-between">
+                <h2 id="mobile-history-title" className="font-semibold">Chat history</h2>
+                <button
+                  ref={historyCloseRef}
+                  type="button"
+                  onClick={() => setHistoryOpen(false)}
+                  aria-label="Close chat history"
+                  className="rounded-lg px-3 py-2 text-white/60 hover:bg-white/[.06] hover:text-white"
+                >
+                  Close
+                </button>
+              </div>
+              <button type="button" onClick={startNewChat} className="btn btn-ghost mb-5 w-full">New chat</button>
+              <HistoryContent
+                history={history}
+                savedHistory={savedHistory}
+                mode={historyMode}
+                error={historyError}
+                action={historyAction}
+                onSelect={selectHistory}
+                onDelete={confirmDeleteHistoryItem}
+                onClear={confirmClearSavedHistory}
+              />
+            </aside>
+          </div>
+        )}
 
         {/* CENTER */}
         <main className="flex min-h-0 flex-col">
@@ -316,6 +369,67 @@ export function ChatApp() {
         </aside>
       </div>
     </div>
+  );
+}
+
+function HistoryContent({
+  history,
+  savedHistory,
+  mode,
+  error,
+  action,
+  onSelect,
+  onDelete,
+  onClear,
+}: {
+  history: HistoryEntry[];
+  savedHistory: HistoryItem[];
+  mode: HistoryMode;
+  error: string;
+  action: string | null;
+  onSelect: (prompt: string) => void;
+  onDelete: (item: HistoryItem) => void;
+  onClear: () => void;
+}) {
+  return (
+    <>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <h2 className="text-xs text-white/40">Recent requests</h2>
+        {mode === "saved" && savedHistory.length > 0 && (
+          <button
+            type="button"
+            onClick={onClear}
+            disabled={action !== null}
+            className="text-[11px] text-white/45 hover:text-peach disabled:opacity-50"
+          >
+            {action === "clear-all" ? "Clearing…" : "Clear all"}
+          </button>
+        )}
+      </div>
+      {history.length === 0 ? <p className="text-xs text-white/35">{mode === "saved" ? "Your saved requests will appear here." : "Your requests from this session show up here. Sign in to save them."}</p> : (
+        <ul className="space-y-1">{history.slice(0, 20).map((item) => {
+          const savedItem = mode === "saved" ? savedHistory.find((entry) => entry.id === item.id) : undefined;
+          return (
+            <li key={item.id} className="flex items-center gap-1">
+              <button type="button" onClick={() => onSelect(item.prompt)} className="min-w-0 flex-1 truncate rounded-lg px-2 py-1.5 text-left text-white/70 hover:bg-white/[.06]">{item.prompt}</button>
+              {savedItem && (
+                <button
+                  type="button"
+                  onClick={() => onDelete(savedItem)}
+                  disabled={action !== null}
+                  aria-label={`Delete saved request: ${savedItem.prompt}`}
+                  className="shrink-0 rounded px-2 py-1 text-xs text-white/35 hover:text-peach disabled:opacity-50"
+                >
+                  {action === savedItem.id ? "…" : "×"}
+                </button>
+              )}
+            </li>
+          );
+        })}</ul>
+      )}
+      {mode === "error" || error ? <p role="status" className="mt-2 text-[11px] text-peach">{error || "Saved history is temporarily unavailable."}</p> : null}
+      <p className="mt-6 text-[11px] leading-relaxed text-white/30">{mode === "saved" ? "Saved to your account. Select a request to put it in the composer." : "Preview history lives in this tab only."}</p>
+    </>
   );
 }
 
