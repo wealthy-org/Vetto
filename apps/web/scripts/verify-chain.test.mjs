@@ -86,6 +86,16 @@ test("rejects malformed JSON-RPC response bodies", async () => {
   );
 });
 
+test("includes the RPC response detail when an HTTP request fails", async () => {
+  await assert.rejects(
+    verifyChain({
+      ...ENV,
+      fetchImpl: async () => new Response("request exceeds allowed log range", { status: 400 }),
+    }),
+    /HTTP 400 for eth_chainId: request exceeds allowed log range/,
+  );
+});
+
 test("requires distinct RPC origins and HTTPS for remote endpoints", async () => {
   await assert.rejects(
     verifyChain({ ...ENV, secondaryUrl: "http://127.0.0.1:8545", fetchImpl: mockFetch() }),

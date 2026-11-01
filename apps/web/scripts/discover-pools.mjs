@@ -12,12 +12,18 @@ async function main() {
   if (!fromBlock) {
     throw new Error("Set ROBINHOOD_POOL_SCAN_FROM_BLOCK to a trusted PoolManager deployment/start block.");
   }
+  const rawChunkSize = process.env.ROBINHOOD_POOL_SCAN_CHUNK_SIZE;
+  const chunkSize = rawChunkSize === undefined ? 1_000 : Number(rawChunkSize);
+  if (!Number.isSafeInteger(chunkSize) || chunkSize < 1 || chunkSize > 10_000) {
+    throw new Error("ROBINHOOD_POOL_SCAN_CHUNK_SIZE must be a whole number from 1 to 10000.");
+  }
 
   const chain = await verifyChain(config);
   const discovery = await discoverV4Pools({
     ...config,
     fromBlock,
     toBlock: process.env.ROBINHOOD_POOL_SCAN_TO_BLOCK ?? chain.commonBlock,
+    chunkSize,
   });
   if (discovery.pools.length > 25) {
     throw new Error(`Found ${discovery.pools.length} pool keys; narrow the scan range before checking state (limit 25).`);

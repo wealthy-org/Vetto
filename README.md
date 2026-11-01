@@ -24,8 +24,8 @@ pnpm dev           # http://localhost:3000
 Before enabling any chain integration, configure two independently operated RPC endpoints and the USDG address confirmed from an official source:
 
 ```powershell
-$env:ROBINHOOD_RPC_URL_PRIMARY = "https://robinhood.drpc.org"
-$env:ROBINHOOD_RPC_URL_SECONDARY = "https://robinhood.api.pocket.network"
+$env:ROBINHOOD_RPC_URL_PRIMARY = "https://rpc.solidrpc.io/ak_aec843b103a5fc6a761329a12fbf14222b9453e3924333d868a9372362ae68a5/evm/4663"
+$env:ROBINHOOD_RPC_URL_SECONDARY = "https://api.blockvectra.com/v1/robinhood_mainnet/rgw_1593c3098bb5255cb1b1ea8dcfd0d1b3a1de07c1aa1429572196dd1ce1bb5b74"
 $env:ROBINHOOD_USDG_ADDRESS = "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168"
 pnpm verify:chain
 ```
@@ -35,10 +35,12 @@ The checker validates chain ID 4663 on both RPCs, compares the Uniswap v4 PoolMa
 ### Discover Uniswap v4 ETH/USDG pools
 
 Find the PoolManager deployment block from the [Blockscout contract page](https://robinhoodchain.blockscout.com/address/0x8366a39CC670B4001A1121B8F6A443A643e40951), set it as a trusted starting block, then scan a bounded range. The scan is limited to 250,000 blocks per run; if the deployment is older than that, set an end block and run consecutive ranges. A scan only establishes results for the printed block range.
+Set `ROBINHOOD_POOL_SCAN_CHUNK_SIZE` to a provider's maximum `eth_getLogs` range when needed. Smaller chunks increase the number of RPC requests; keep test ranges small before attempting a larger scan.
 
 ```powershell
-$env:ROBINHOOD_POOL_SCAN_FROM_BLOCK = "<decimal-start-block>"
-$env:ROBINHOOD_POOL_SCAN_TO_BLOCK = "<decimal-end-block>"
+$env:ROBINHOOD_POOL_SCAN_FROM_BLOCK = "9070"
+$env:ROBINHOOD_POOL_SCAN_TO_BLOCK = "10069"
+$env:ROBINHOOD_POOL_SCAN_CHUNK_SIZE = "10"
 pnpm discover:pools
 ```
 

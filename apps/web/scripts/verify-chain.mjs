@@ -60,7 +60,11 @@ async function rpcCall(url, method, params, fetchImpl) {
     throw new Error(`RPC host ${url.host} could not be reached for ${method}.`);
   }
 
-  if (!response.ok) throw new Error(`RPC host ${url.host} returned HTTP ${response.status} for ${method}.`);
+  if (!response.ok) {
+    const detail = (await response.text()).replace(/\s+/g, " ").trim().slice(0, 240);
+    const reason = detail ? `: ${detail}` : "";
+    throw new Error(`RPC host ${url.host} returned HTTP ${response.status} for ${method}${reason}.`);
+  }
 
   let body;
   try {
@@ -273,7 +277,7 @@ export async function discoverV4Pools({
   usdgAddress,
   fromBlock,
   toBlock,
-  chunkSize = 5_000,
+  chunkSize = 1_000,
   maxBlocks = 250_000,
   fetchImpl = fetch,
 }) {
@@ -335,7 +339,13 @@ export async function discoverV4Pools({
       ],
     };
     const responses = await Promise.all(providers.map(async (provider) => {
-      const logs = await rpcCall(provider.url, "eth_getLogs", [filter], fetchImpl);
+      let logs;
+      try {
+        logs = await rpcCall(provider.url, "eth_getLogs", [filter], fetchImpl);
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : "RPC request failed.";
+        throw new Error(`${detail} Requested block range ${chunkFrom}-${chunkTo}.`);
+      }
       if (!Array.isArray(logs)) {
         throw new Error(`${provider.name} RPC returned invalid eth_getLogs data.`);
       }
