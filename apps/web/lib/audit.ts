@@ -3,6 +3,7 @@ import { getPool } from "./db";
 export interface AuditEvent {
   /** mis. "intent.parse", "quotes.request", "inspect.passive" */
   action: string;
+  userId?: string;
   intentKind?: string;
   decision?: string;
   /** Metadata kecil & tidak sensitif. Jangan pernah teks mentah pengguna, IP, atau rahasia. */
@@ -27,14 +28,14 @@ export function sanitizeMeta(meta: Record<string, unknown> = {}): Record<string,
 
 export async function writeAudit(db: AuditDb, e: AuditEvent): Promise<void> {
   await db.query(
-    "insert into audit_log (action, intent_kind, decision, meta) values ($1, $2, $3, $4::jsonb)",
-    [e.action, e.intentKind ?? null, e.decision ?? null, JSON.stringify(sanitizeMeta(e.meta))],
+    "insert into audit_log (user_id, action, intent_kind, decision, meta) values ($1, $2, $3, $4, $5::jsonb)",
+    [e.userId ?? null, e.action, e.intentKind ?? null, e.decision ?? null, JSON.stringify(sanitizeMeta(e.meta))],
   );
 }
 
 /**
  * Best-effort untuk endpoint baca/parse: tidak pernah melempar error dan tidak memblokir request.
- * Endpoint yang memindahkan dana (execute/prepare, nanti) HARUS memanggil writeAudit() langsung
+ * Endpoint persiapan transaksi atau pemindahan dana HARUS memanggil writeAudit() langsung
  * dan menolak request jika audit gagal (fail closed).
  */
 export async function audit(e: AuditEvent): Promise<void> {

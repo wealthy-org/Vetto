@@ -9,6 +9,7 @@ export const CAPABILITIES: readonly Capability[] = Object.freeze([
   { id: "link-passive", label: "Passive link check", status: "verified", note: "URL policy only (https, public host). Reports “insufficient evidence” on its own." },
   { id: "wallet-signin", label: "Wallet sign-in", status: "planned", note: "Needs a provider with Robinhood Chain support." },
   { id: "route-direct", label: "Direct pool swap (Uniswap v4)", status: "planned", note: "Waiting on Phase 0 verification of real, liquid pools." },
+  { id: "transaction-prepare", label: "Transaction preparation", status: "planned", note: "Authenticated API is implemented but fails closed until Phase 0 verifies the chain, assets, and an executable route." },
   { id: "route-split", label: "Split route", status: "planned", note: "Requires an executable multi-pool router." },
   { id: "route-solver", label: "Intent solver", status: "planned", note: "Needs real competing solvers on this chain." },
   { id: "route-rfq", label: "Market-maker RFQ", status: "planned", note: "Needs a live maker." },

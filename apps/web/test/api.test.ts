@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { POST as intent } from "../app/api/intent/route.ts";
 import { POST as quotes } from "../app/api/quotes/route.ts";
 import { POST as inspect } from "../app/api/inspect/route.ts";
+import { POST as prepare } from "../app/api/execute/prepare/route.ts";
 import { GET as caps } from "../app/api/capabilities/route.ts";
 
 const BASE = "http://localhost:3000";
@@ -73,6 +74,15 @@ test("POST /api/quotes: wrong chain, non-swap, raw address from an LLM, unknown 
   assert.equal((await quotes(post("/api/quotes", swap({ tokenOut: "PEPE" })))).status, 422);
 });
 
+test("POST /api/execute/prepare: requires a valid idempotency key and authenticated session", async () => {
+  const intent = { kind: "swap", chainId: 4663, tokenIn: "USDG", tokenOut: "ETH", amountIn: "1", privateRequested: false };
+  const key = "00000000-0000-4000-8000-000000000001";
+  assert.equal((await prepare(post("/api/execute/prepare", { intent }))).status, 400);
+  const response = await prepare(post("/api/execute/prepare", { intent }, { "idempotency-key": key }));
+  assert.equal(response.status, 401);
+  assert.deepEqual(await j(response), { error: "Sign in before preparing a transaction." });
+});
+
 test("POST /api/inspect: SSRF targets rejected; public link → 'insufficient evidence', never 'low concern'", async () => {
   for (const u of ["https://169.254.169.254/latest", "https://localhost/", "https://2130706433/", "http://example.com"]) {
     const b = await j(await inspect(post("/api/inspect", { url: u })));
@@ -88,7 +98,7 @@ test("POST /api/inspect: SSRF targets rejected; public link → 'insufficient ev
 test("GET /api/capabilities: no external capability or asset is claimed as verified", async () => {
   const b = await j(await caps());
   assert.equal(b.chainId, 4663);
-  const ext = b.capabilities.filter((c: any) => /^(route-|private-|wallet-|dapp-|agent-|live-)/.test(c.id));
+  const ext = b.capabilities.filter((c: any) => /^(route-|transaction-|private-|wallet-|dapp-|agent-|live-)/.test(c.id));
   assert.ok(ext.length > 0 && ext.every((c: any) => c.status !== "verified"));
   assert.ok(b.assets.every((a: any) => a.status === "unverified"));
 });

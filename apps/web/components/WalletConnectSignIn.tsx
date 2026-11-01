@@ -19,18 +19,32 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
   return result;
 }
 
+function readableError(cause: unknown): string {
+  if (cause instanceof Error) return cause.message;
+  if (typeof cause === "object" && cause !== null) {
+    const details = cause as Record<string, unknown>;
+    for (const key of ["shortMessage", "message", "reason"]) {
+      if (typeof details[key] === "string" && details[key]) return details[key];
+    }
+  }
+  return "Wallet sign-in failed. No transaction was sent.";
+}
+
 export function WalletConnectSignIn({ mode }: { mode: "sign-in" | "sign-up" }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [progress, setProgress] = useState("");
 
   async function signIn() {
     if (!PROJECT_ID || busy) return;
     setBusy(true);
     setError("");
+    setProgress("Loading WalletConnect…");
 
     try {
       const { EthereumProvider } = await import("@walletconnect/ethereum-provider");
+      setProgress("Connecting to WalletConnect relay…");
       const provider = await EthereumProvider.init({
         projectId: PROJECT_ID,
         optionalChains: [WALLET_AUTH_CHAIN_ID],
@@ -45,7 +59,12 @@ export function WalletConnectSignIn({ mode }: { mode: "sign-in" | "sign-up" }) {
         },
       });
 
+      setProgress("Opening the wallet connection…");
+      provider.on("display_uri", () => {
+        setProgress("QR connection is ready. Scan it with your wallet.");
+      });
       const accounts = await provider.enable();
+      setProgress("Wallet connected. Requesting the one-time login message…");
       const address = accounts[0];
       if (!address) throw new Error("No wallet account was shared.");
 
@@ -54,10 +73,12 @@ export function WalletConnectSignIn({ mode }: { mode: "sign-in" | "sign-up" }) {
       }
 
       const challenge = await postJson<{ challengeId: string; message: string }>("/api/auth/challenge", { address });
+      setProgress("Approve the one-time login message in your wallet. This is not a transaction.");
       const signature = await provider.request<unknown>({
         method: "personal_sign",
         params: [challenge.message, address],
       });
+      setProgress("Verifying the wallet signature…");
       const verified = await postJson<{ authenticated: boolean }>("/api/auth/verify", {
         challengeId: challenge.challengeId,
         address,
@@ -68,9 +89,10 @@ export function WalletConnectSignIn({ mode }: { mode: "sign-in" | "sign-up" }) {
       router.replace("/app");
       router.refresh();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Wallet sign-in failed. No transaction was sent.");
+      setError(readableError(cause));
     } finally {
       setBusy(false);
+      setProgress("");
     }
   }
 
@@ -84,9 +106,10 @@ export function WalletConnectSignIn({ mode }: { mode: "sign-in" | "sign-up" }) {
         className="flex w-full items-center gap-3 rounded-xl border border-white/10 bg-white/[.04] px-4 py-3 text-left text-sm font-medium disabled:cursor-not-allowed disabled:opacity-70"
       >
         <IconLock className="h-4 w-4" />
-        {busy ? "Waiting for wallet…" : mode === "sign-up" ? "Create account with WalletConnect" : "Sign in with WalletConnect"}
+        {busy ? progress : mode === "sign-up" ? "Create account with WalletConnect" : "Sign in with WalletConnect"}
         <span className="ml-auto"><StatusChip status={configured ? "planned" : "unavailable"} /></span>
       </button>
+      {busy && <p role="status" className="mt-2 text-xs text-white/55">{progress}</p>}
       {error && <p role="alert" className="mt-2 text-xs text-peach">{error}</p>}
       {!configured && <p className="mt-2 text-xs text-white/40">WalletConnect is not configured. Add its public project ID to the web app environment.</p>}
     </div>
