@@ -164,7 +164,86 @@ export async function POST(request: Request) {
         console.error("Chat history transaction rollback failed:", rollbackError instanceof Error ? rollbackError.message : rollbackError);
       }
     }
+
     console.error("Chat history could not be saved:", error instanceof Error ? error.message : error);
+    return jsonError(503, "Chat history is temporarily unavailable.");
+  } finally {
+    client?.release();
+  }
+}
+
+export async function DELETE(request: Request) {
+  const guarded = await guardJson(request, "history-delete", 10);
+  if ("res" in guarded) return guarded.res;
+  if (!isRecord(guarded.body)) return jsonError(400, "Expected a history item ID or clearAll: true.");
+
+  const clearAll = guarded.body.clearAll === true;
+  const id = guarded.body.id;
+  if (clearAll ? id !== undefined : typeof id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) {
+    return jsonError(400, "Provide one valid history item ID or clearAll: true.");
+  }
+  if (clearAll && Object.keys(guarded.body).some((key) => key !== "clearAll")) {
+    return jsonError(400, "Provide one valid history item ID or clearAll: true.");
+  }
+  if (!clearAll && Object.keys(guarded.body).some((key) => key !== "id")) {
+    return jsonError(400, "Provide one valid history item ID or clearAll: true.");
+  }
+
+  let userId: string | null;
+  try {
+    userId = await authenticatedUserId(request);
+  } catch (error) {
+    console.error("Chat history authentication failed:", error instanceof Error ? error.message : error);
+    return jsonError(503, "Chat history is temporarily unavailable.");
+  }
+  if (!userId) return jsonError(401, "Sign in to delete your saved history.");
+
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) return jsonError(503, "Chat history is temporarily unavailable.");
+  let client: PoolClient | undefined;
+  let transactionOpen = false;
+  try {
+    client = await getPool(databaseUrl).connect();
+    await client.query("begin");
+    transactionOpen = true;
+
+    if (clearAll) {
+      await client.query(
+        "delete from idempotency_keys where user_id = $1 and key like 'history:%'",
+        [userId],
+      );
+      const deleted = await client.query(
+        "delete from user_chat_history where user_id = $1",
+        [userId],
+      );
+      await client.query("commit");
+      transactionOpen = false;
+      return jsonOk({ deletedCount: deleted.rowCount ?? 0 });
+    }
+
+    await client.query(
+      `delete from idempotency_keys
+       where user_id = $1
+         and key like 'history:%'
+         and response->'item'->>'id' = $2`,
+      [userId, id],
+    );
+    const deleted = await client.query(
+      "delete from user_chat_history where id = $1 and user_id = $2",
+      [id, userId],
+    );
+    await client.query("commit");
+    transactionOpen = false;
+    return jsonOk({ deleted: (deleted.rowCount ?? 0) > 0 });
+  } catch (error) {
+    if (transactionOpen && client) {
+      try {
+        await client.query("rollback");
+      } catch (rollbackError) {
+        console.error("Chat history transaction rollback failed:", rollbackError instanceof Error ? rollbackError.message : rollbackError);
+      }
+    }
+    console.error("Chat history could not be deleted:", error instanceof Error ? error.message : error);
     return jsonError(503, "Chat history is temporarily unavailable.");
   } finally {
     client?.release();

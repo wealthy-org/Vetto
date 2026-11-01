@@ -48,6 +48,7 @@ export function ChatApp() {
   const [savedHistory, setSavedHistory] = useState<HistoryItem[]>([]);
   const [historyMode, setHistoryMode] = useState<HistoryMode>("loading");
   const [historyError, setHistoryError] = useState("");
+  const [historyAction, setHistoryAction] = useState<string | null>(null);
   const seq = useRef(0);
   const endRef = useRef<HTMLDivElement>(null);
   const historyReadyRef = useRef<Promise<boolean> | null>(null);
@@ -133,6 +134,45 @@ export function ChatApp() {
     }
   }
 
+  async function deleteSavedHistory(body: { id: string } | { clearAll: true }, actionKey: string) {
+    if (historyAction) return;
+    setHistoryAction(actionKey);
+    setHistoryError("");
+    try {
+      const response = await fetch("/api/history", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const result = await response.json() as { deleted?: boolean; deletedCount?: number; error?: string };
+      if (response.status === 401) {
+        setHistoryMode("preview");
+        setSavedHistory([]);
+        setHistoryError("Your sign-in expired. Sign in again to manage saved history.");
+        return;
+      }
+      if (!response.ok) throw new Error(result.error ?? `History deletion failed (${response.status}).`);
+      if ("clearAll" in body) setSavedHistory([]);
+      else setSavedHistory((items) => items.filter((item) => item.id !== body.id));
+    } catch (error) {
+      setHistoryError(error instanceof Error ? error.message : "Chat history could not be deleted.");
+    } finally {
+      setHistoryAction(null);
+    }
+  }
+
+  function confirmDeleteHistoryItem(item: HistoryItem) {
+    if (window.confirm("Delete this saved request? This cannot be undone.")) {
+      void deleteSavedHistory({ id: item.id }, item.id);
+    }
+  }
+
+  function confirmClearSavedHistory() {
+    if (window.confirm("Delete all saved chat history? This cannot be undone.")) {
+      void deleteSavedHistory({ clearAll: true }, "clear-all");
+    }
+  }
+
   async function send(raw: string) {
     const text = raw.trim();
     if (!text || busy) return;
@@ -179,9 +219,39 @@ export function ChatApp() {
         {/* LEFT RAIL */}
         <nav className="hidden overflow-y-auto border-r border-white/8 p-4 text-sm lg:block" aria-label="Chats and history">
           <button type="button" onClick={() => { setMsgs([]); setInput(""); }} className="btn btn-ghost mb-5 w-full">New chat</button>
-          <h2 className="mb-2 text-xs text-white/40">Chat history</h2>
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <h2 className="text-xs text-white/40">Chat history</h2>
+            {historyMode === "saved" && savedHistory.length > 0 && (
+              <button
+                type="button"
+                onClick={confirmClearSavedHistory}
+                disabled={historyAction !== null}
+                className="text-[11px] text-white/45 hover:text-peach disabled:opacity-50"
+              >
+                {historyAction === "clear-all" ? "Clearing…" : "Clear all"}
+              </button>
+            )}
+          </div>
           {history.length === 0 ? <p className="text-xs text-white/35">{historyMode === "saved" ? "Your saved requests will appear here." : "Your requests from this session show up here. Sign in to save them."}</p> : (
-            <ul className="space-y-1">{history.slice(0, 20).map((item) => (<li key={item.id}><button type="button" onClick={() => setInput(item.prompt)} className="w-full truncate rounded-lg px-2 py-1.5 text-left text-white/70 hover:bg-white/[.06]">{item.prompt}</button></li>))}</ul>
+            <ul className="space-y-1">{history.slice(0, 20).map((item) => {
+              const savedItem = historyMode === "saved" ? savedHistory.find((entry) => entry.id === item.id) : undefined;
+              return (
+                <li key={item.id} className="flex items-center gap-1">
+                  <button type="button" onClick={() => setInput(item.prompt)} className="min-w-0 flex-1 truncate rounded-lg px-2 py-1.5 text-left text-white/70 hover:bg-white/[.06]">{item.prompt}</button>
+                  {savedItem && (
+                    <button
+                      type="button"
+                      onClick={() => confirmDeleteHistoryItem(savedItem)}
+                      disabled={historyAction !== null}
+                      aria-label={`Delete saved request: ${savedItem.prompt}`}
+                      className="shrink-0 rounded px-2 py-1 text-xs text-white/35 hover:text-peach disabled:opacity-50"
+                    >
+                      {historyAction === savedItem.id ? "…" : "×"}
+                    </button>
+                  )}
+                </li>
+              );
+            })}</ul>
           )}
           {historyMode === "error" || historyError ? <p role="status" className="mt-2 text-[11px] text-peach">{historyError || "Saved history is temporarily unavailable."}</p> : null}
           <p className="mt-6 text-[11px] leading-relaxed text-white/30">{historyMode === "saved" ? "Saved to your account. Click a request to run it again." : "Preview history lives in this tab only."}</p>

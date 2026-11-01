@@ -60,7 +60,7 @@ pnpm db:migrate
 ```
 The wallet signs a short-lived, single-use SIWE message for Ethereum Mainnet (chain ID 1) to support wallets that do not recognize Robinhood Chain. This is sign-in only: VETTO does not send an Ethereum transaction, and the app's Robinhood Chain (4663) execution remains unavailable until verified. The server verifies EOA signatures and stores only a hash of the opaque session token; the browser receives an HttpOnly, SameSite=Lax cookie. Authentication never grants transaction authority.
 
-Run `pnpm db:migrate` again to create the per-user chat history table. Only authenticated users' prompts are saved; preview mode stores prompts in the current tab only.
+Run `pnpm db:migrate` again to create the per-user chat history table. Only authenticated users' prompts are saved; preview mode stores prompts in the current tab only. Saved requests can be deleted individually or cleared from the app; deletion also removes their cached idempotency responses.
 
 ## Next steps (brief §20 order)
 1. Phase 0: verify RPC, token addresses, v4 pools. Then flip registry/capability statuses.
