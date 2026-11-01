@@ -32,18 +32,19 @@ pnpm verify:chain
 
 The checker validates chain ID 4663 on both RPCs, compares the Uniswap v4 PoolManager (listed in the [official Uniswap deployment feed](https://developers.uniswap.org/deployments.json)) and configured USDG contract bytecode at a common block, and checks that USDG reports symbol `USDG` with 6 decimals. It is read-only; a passing result does not establish pool liquidity, executable quotes, or transaction safety. Keep the integration matrix `planned` until the remaining Phase 0 evidence and sign-off are complete.
 
-### Inspect one Uniswap v4 ETH/USDG pool
+### Discover Uniswap v4 ETH/USDG pools
 
-Only use `fee`, `tickSpacing`, and `hooks` taken from the exact pool's trusted `Initialize` event or official source. Then run:
+Find the PoolManager deployment block from the [Blockscout contract page](https://robinhoodchain.blockscout.com/address/0x8366a39CC670B4001A1121B8F6A443A643e40951), set it as a trusted starting block, then scan a bounded range. The scan is limited to 250,000 blocks per run; if the deployment is older than that, set an end block and run consecutive ranges. A scan only establishes results for the printed block range.
 
 ```powershell
-$env:ROBINHOOD_POOL_FEE = "8388608"
-$env:ROBINHOOD_POOL_TICK_SPACING = "1"
-$env:ROBINHOOD_POOL_HOOKS_ADDRESS = "0x987E330F00B79864a07FE81dFaC344D0078ABCC0"
-pnpm verify:pool
+$env:ROBINHOOD_POOL_SCAN_FROM_BLOCK = "0x4e59b44847b379578588920cA78FbF26c0B4956C"
+$env:ROBINHOOD_POOL_SCAN_TO_BLOCK = "0x4fb28d4935866f462582c6c931c6f2705e55f5be5eb178c7d8d9329a95c44c41"
+pnpm discover:pools
 ```
 
-The sample fee and spacing above are placeholders, not a claim that this pool exists. The read-only checker computes the v4 pool ID for native ETH/USDG, then compares initialization state and active liquidity across both RPCs at the same block. It does not estimate a trade, validate liquidity at a specific size, or prepare/submit a transaction.
+Discovery compares matching Uniswap v4 `Initialize` logs across both RPCs, decodes the actual pool key, and checks current initialization state and active liquidity at the common block. It does not estimate a trade, validate liquidity at a specific size, or prepare/submit a transaction. Keep quotes and execution disabled until an executable quote and simulation are independently verified.
+
+To inspect a single pool key when you already have its verified values, set `ROBINHOOD_POOL_FEE`, `ROBINHOOD_POOL_TICK_SPACING`, and `ROBINHOOD_POOL_HOOKS_ADDRESS`, then run `pnpm verify:pool`.
 
 ## What is real today
 - Landing page and animations, chat shell, docs, WalletConnect EOA sign-in using an Ethereum Mainnet (chain ID 1) message, one-time SIWE challenges, and database-backed sessions (requires `DATABASE_URL`, migrations, and `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`).

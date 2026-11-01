@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { encodeAbiParameters, keccak256, toFunctionSelector } from "viem";
-import { verifyChain, verifyV4Pool, UNISWAP_V4_POOL_MANAGER } from "./verify-chain.mjs";
+import { encodeAbiParameters, keccak256, toBytes, toFunctionSelector } from "viem";
+import { discoverV4Pools, verifyChain, verifyV4Pool, UNISWAP_V4_POOL_MANAGER } from "./verify-chain.mjs";
 
 const TOKEN = "0x1234567890123456789012345678901234567890";
 const ENV = {
@@ -193,5 +193,101 @@ test("rejects nonzero hook addresses with no deployed contract", async () => {
       fetchImpl: poolMockFetch({ hooksAddress: "0x0000000000000000000000000000000000000001" }),
     }),
     /no hooks contract bytecode/,
+  );
+});
+
+const INITIALIZE_TOPIC = keccak256(toBytes("Initialize(bytes32,address,address,uint24,int24,address,uint160,int24)"));
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+
+function initializeLog({ blockNumber, idByte = "11", fee = 3000n, tickSpacing = 60n, hooks = ZERO_ADDRESS } = {}) {
+  const topicAddress = (address) => `0x${address.slice(2).toLowerCase().padStart(64, "0")}`;
+  const blockHash = `0x${"aa".repeat(32)}`;
+  const transactionHash = `0x${idByte.repeat(32)}`;
+  return {
+    address: UNISWAP_V4_POOL_MANAGER,
+    topics: [
+      INITIALIZE_TOPIC,
+      `0x${idByte.repeat(32)}`,
+      topicAddress(ZERO_ADDRESS),
+      topicAddress(TOKEN),
+    ],
+    data: encodeAbiParameters(
+      [
+        { type: "uint24" },
+        { type: "int24" },
+        { type: "address" },
+        { type: "uint160" },
+        { type: "int24" },
+      ],
+      [fee, tickSpacing, hooks, 1n << 96n, 0n],
+    ),
+    blockNumber: `0x${BigInt(blockNumber).toString(16)}`,
+    blockHash,
+    transactionHash,
+    logIndex: "0x0",
+    removed: false,
+  };
+}
+
+function discoveryMockFetch({ disagree = false } = {}) {
+  const logs = [
+    initializeLog({ blockNumber: 101, idByte: "11", fee: 3000n, tickSpacing: 60n }),
+    initializeLog({ blockNumber: 112, idByte: "22", fee: 8388608n, tickSpacing: 1n, hooks: "0x987E330F00B79864a07FE81dFaC344D0078ABCC0" }),
+  ];
+  return async (url, init) => {
+    const secondary = new URL(url).host.endsWith("8546");
+    const { method, params } = JSON.parse(init.body);
+    let result;
+    if (method === "eth_chainId") result = "0x1237";
+    else if (method === "eth_blockNumber") result = "0xc8";
+    else if (method === "eth_getLogs") {
+      result = logs.filter((log) => BigInt(log.blockNumber) >= BigInt(params[0].fromBlock)
+        && BigInt(log.blockNumber) <= BigInt(params[0].toBlock));
+      if (secondary && disagree && result.length > 0) {
+        result = result.map((log) => ({ ...log, data: `${log.data.slice(0, -1)}${log.data.endsWith("0") ? "1" : "0"}` }));
+      }
+    } else {
+      throw new Error(`Unexpected RPC method ${method}`);
+    }
+    return Response.json({ jsonrpc: "2.0", id: 1, result });
+  };
+}
+
+test("discovers exact ETH/USDG Initialize pool keys in bounded chunks", async () => {
+  const report = await discoverV4Pools({
+    ...ENV,
+    fromBlock: "100",
+    toBlock: "115",
+    chunkSize: 10,
+    fetchImpl: discoveryMockFetch(),
+  });
+  assert.equal(report.scannedBlocks, "16");
+  assert.equal(report.pools.length, 2);
+  assert.equal(report.pools[0].fee, "3000");
+  assert.equal(report.pools[0].tickSpacing, "60");
+  assert.equal(report.pools[1].fee, "8388608");
+  assert.equal(report.pools[1].hooks, "0x987E330F00B79864a07FE81dFaC344D0078ABCC0");
+});
+
+test("pool discovery rejects mismatched event logs between RPCs", async () => {
+  await assert.rejects(
+    discoverV4Pools({
+      ...ENV,
+      fromBlock: "100",
+      toBlock: "115",
+      fetchImpl: discoveryMockFetch({ disagree: true }),
+    }),
+    /disagree on ETH\/USDG Initialize logs/,
+  );
+});
+
+test("pool discovery enforces a bounded, valid block range", async () => {
+  await assert.rejects(
+    discoverV4Pools({ ...ENV, fromBlock: "100", toBlock: "115", maxBlocks: 10, fetchImpl: discoveryMockFetch() }),
+    /exceeds the 10-block safety limit/,
+  );
+  await assert.rejects(
+    discoverV4Pools({ ...ENV, fromBlock: "300", toBlock: "200", fetchImpl: discoveryMockFetch() }),
+    /must be at or below toBlock/,
   );
 });

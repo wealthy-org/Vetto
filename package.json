@@ -11,6 +11,7 @@
     "test": "pnpm -r test",
     "verify:chain": "pnpm --filter @vetto/web verify:chain",
     "verify:pool": "pnpm --filter @vetto/web verify:pool",
+    "discover:pools": "pnpm --filter @vetto/web discover:pools",
     "db:migrate": "pnpm --filter @vetto/web db:migrate"
   },
   "devDependencies": {

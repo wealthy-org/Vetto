@@ -10,6 +10,7 @@
     "test": "node --import ./test/register.mjs --experimental-strip-types --no-warnings --test lib/*.test.ts test/*.test.ts scripts/*.test.mjs",
     "verify:chain": "node scripts/verify-chain.mjs",
     "verify:pool": "node scripts/verify-pool.mjs",
+    "discover:pools": "node scripts/discover-pools.mjs",
     "db:migrate": "node --env-file=.env.local scripts/migrate.mjs"
   },
   "dependencies": {
