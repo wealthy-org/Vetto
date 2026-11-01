@@ -8,7 +8,7 @@ It does not submit transactions, contact inspected sites, or claim any chain ven
 
 | Capability | Status | Needed to verify | Owner |
 |---|---|---|---|
-| Robinhood Chain RPC + chain ID 4663 | planned | Confirm against official docs; compare ≥2 endpoints | |
+| Robinhood Chain RPC + chain ID 4663 | planned | Run `pnpm verify:chain` with two independently operated HTTPS RPCs and the officially verified USDG address; the checker compares chain ID, shared-block contract bytecode, symbol and decimals. This is read-only and does not verify pool liquidity or authorize execution. | |
 | Token addresses / decimals (ETH, USDG) | planned | Confirm on-chain; set `status: "verified"` in `asset-registry` | |
 | Uniswap v4 direct pool adapter | planned | Real liquid pool; simulation passes; testnet/fork tx | |
 | Split route / solver / RFQ | planned | Real executable counterparties | |

@@ -15,9 +15,24 @@ docs/                   integration matrix, threat model
 ## Run
 ```bash
 corepack enable && pnpm install
-pnpm test          # 25 zero-dependency unit tests (node:test)
+pnpm test          # run all unit tests (node:test)
 pnpm dev           # http://localhost:3000
 ```
+
+## Read-only chain verification
+
+Before enabling any chain integration, configure two independently operated RPC endpoints and the USDG address confirmed from an official source:
+
+```powershell
+$env:ROBINHOOD_RPC_URL_PRIMARY = "https://robinhood.drpc.org"
+
+$env:ROBINHOOD_RPC_URL_SECONDARY = "https://robinhood.api.pocket.network"
+
+$env:ROBINHOOD_USDG_ADDRESS = "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168"
+pnpm verify:chain
+```
+
+The checker validates chain ID 4663 on both RPCs, compares the Uniswap v4 PoolManager (listed in the [official Uniswap deployment feed](https://developers.uniswap.org/deployments.json)) and configured USDG contract bytecode at a common block, and checks that USDG reports symbol `USDG` with 6 decimals. It is read-only; a passing result does not establish pool liquidity, executable quotes, or transaction safety. Keep the integration matrix `planned` until the remaining Phase 0 evidence and sign-off are complete.
 
 ## What is real today
 - Landing page and animations, chat shell, docs, WalletConnect EOA sign-in using an Ethereum Mainnet (chain ID 1) message, one-time SIWE challenges, and database-backed sessions (requires `DATABASE_URL`, migrations, and `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`).

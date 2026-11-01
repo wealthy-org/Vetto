@@ -9,6 +9,7 @@
     "build": "pnpm --filter @vetto/web build",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
+    "verify:chain": "pnpm --filter @vetto/web verify:chain",
     "db:migrate": "pnpm --filter @vetto/web db:migrate"
   },
   "devDependencies": {
