@@ -1,0 +1,11 @@
+{
+  "name": "@vetto/asset-registry",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node --experimental-strip-types --no-warnings --test src/*.test.ts"
+  }
+}

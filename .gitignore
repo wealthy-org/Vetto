@@ -1,36 +1,5 @@
-
-# Dependencies
-node_modules/
-.pnp
-.pnp.*
-
-# Next.js
-.next/
-out/
-build/
-dist/
-
-# Environment variables
+node_modules
+.next
 .env
-.env.*
-!.env.example
-
-# Logs
-*.log
-npm-debug.log*
-pnpm-debug.log*
-yarn-debug.log*
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Editor
-.vscode/
-.idea/
-
-# Deployment
-.vercel/
-
-# TypeScript
+.env.local
 *.tsbuildinfo

@@ -1,0 +1,146 @@
+"use client";
+import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
+import gsap from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
+import { capabilityById } from "@vetto/quote-engine";
+import { Banker, SpeechBubble, type Pose } from "../Banker";
+import { Mark } from "../Logo";
+import { StatusChip } from "../StatusChip";
+import { IconArrow, IconBrowser, IconKey, IconLock, IconShield, IconSwap } from "../icons";
+import { SampleCheck, SampleLive, SamplePrivate, SampleRoute, SampleTask } from "./samples";
+
+const STEPS = [
+  { id: "swap", Icon: IconSwap, Card: SampleRoute, cap: "route-direct", pose: "clasp" as Pose, title: "Real routes, ranked by what you keep.",
+    body: "Say the trade in plain words. Vetto lists only routes that can actually execute and orders them by what lands in your wallet after fees.",
+    cmd: "swap 2500 USDG to ETH", say: "With live routes, the one that pays you the most sits on top. If only one exists, you see one." },
+  { id: "private", Icon: IconLock, Card: SamplePrivate, cap: "private-relay", pose: "point" as Pose, title: "Private, when it's truly possible.",
+    body: "Ask for private submission and the order skips the public mempool, but only through a relay verified for this chain. Otherwise the switch stays off and says why.",
+    cmd: "swap 2 ETH to USDG privately", say: "No relay, no pretending. I'll tell you plainly instead of dressing up a public route." },
+  { id: "check", Icon: IconShield, Card: SampleCheck, cap: "dapp-sandbox", pose: "idle" as Pose, title: "Inspected before you connect.",
+    body: "Paste a link. Vetto reads it on a sealed machine with a throwaway wallet and reports every approval and signature the site tries to get.",
+    cmd: "is fastclaim-hood.xyz safe?", say: "It wants every token you own, forever. I would not touch this one." },
+  { id: "agent", Icon: IconKey, Card: SampleTask, cap: "agent-tasks", pose: "point" as Pose, title: "A capped burner does the clicking.",
+    body: "Hand over a mint or claim. It runs from a burner wallet you fund with a small, fixed budget. Your main wallet never visits the site.",
+    cmd: "mint the NFT at nft-mint-pass.app max 0.01 ETH", say: "Dry run first, then your explicit go. Worst case, you lose the burner's balance." },
+  { id: "live", Icon: IconBrowser, Card: SampleLive, cap: "live-browser", pose: "wave" as Pose, title: "Watch it work. Grab the controls.",
+    body: "Each task streams from an isolated machine. Watch read-only, take over at any point, and end the session with everything wiped.",
+    cmd: "open demo-dex.app live", say: "My screen is read-only until you ask for the controls." },
+];
+const N = STEPS.length;
+const STEP_DEG = 360 / N;
+
+function Wheel({ step }: { step: number }) {
+  const wheel = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = wheel.current;
+    if (!el) return;
+    gsap.to(el, { rotation: -STEP_DEG * step, duration: 0.9, ease: "power3.out" });
+    gsap.to(el.querySelectorAll("[data-node]"), { rotation: STEP_DEG * step, duration: 0.9, ease: "power3.out" });
+  }, [step]);
+  const R = 92;
+  return (
+    <div className="relative mx-auto h-[250px] w-[250px]" aria-hidden>
+      <div className="absolute inset-0 rounded-full border border-white/10" />
+      <div ref={wheel} className="absolute inset-0">
+        {STEPS.map((s, i) => {
+          const a = (i / N) * Math.PI * 2 - Math.PI / 2;
+          const active = i === step;
+          return (
+            <div key={s.id} data-node className="absolute grid h-11 w-11 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border transition-colors duration-500"
+              style={{ left: `${125 + Math.cos(a) * R}px`, top: `${125 + Math.sin(a) * R}px`, background: active ? "linear-gradient(120deg,#c9b6ff,#ffb59a)" : "rgba(255,255,255,.05)", borderColor: active ? "transparent" : "rgba(255,255,255,.12)", color: active ? "#1a1033" : "rgba(255,255,255,.55)" }}>
+              <s.Icon />
+            </div>
+          );
+        })}
+      </div>
+      <div className="absolute left-1/2 top-1/2 grid h-20 w-20 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full glass"><Mark size={34} /></div>
+      <IconArrow className="absolute right-[-6px] top-1/2 h-5 w-5 -translate-y-1/2 text-peach" />
+    </div>
+  );
+}
+
+function StepText({ i }: { i: number }) {
+  const s = STEPS[i]!;
+  const cap = capabilityById(s.cap);
+  return (
+    <div key={s.id} className="step-in">
+      <h3 className="text-2xl font-semibold tracking-tight">{s.title}</h3>
+      <p className="mt-2 max-w-sm text-sm leading-relaxed text-white/60">{s.body}</p>
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <Link href={`/app?ask=${encodeURIComponent(s.cmd)}`} className="chip">Try “{s.cmd.length > 34 ? `${s.cmd.slice(0, 32)}…` : s.cmd}” <IconArrow className="h-3 w-3" /></Link>
+        {cap && <span className="flex items-center gap-1.5 text-xs text-white/50"><StatusChip status={cap.status} /> {cap.label}</span>}
+      </div>
+    </div>
+  );
+}
+
+function Panel({ i }: { i: number }) {
+  const s = STEPS[i]!;
+  return (
+    <div className="glass relative h-[560px] overflow-hidden rounded-[28px]">
+      <div className="text-field pointer-events-none absolute inset-0" />
+      <Banker pose={s.pose} className="pointer-events-none absolute -left-6 bottom-[-40px] h-[500px] w-auto" />
+      <div key={`b-${s.id}`} className="step-in absolute left-5 top-5 max-w-[250px]"><SpeechBubble>{s.say}</SpeechBubble></div>
+      <div key={`c-${s.id}`} className="step-in glass absolute bottom-6 right-6 top-28 w-[54%] overflow-hidden rounded-2xl p-4"><s.Card /></div>
+    </div>
+  );
+}
+
+export function Showcase() {
+  const pin = useRef<HTMLDivElement>(null);
+  const [pinned, setPinned] = useState(false);
+  const [step, setStep] = useState(0);
+
+  // Pin only on wide screens with motion allowed; otherwise render the stacked list.
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1024px) and (prefers-reduced-motion: no-preference)");
+    const sync = () => setPinned(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+
+  useEffect(() => {
+    if (!pinned || !pin.current) return;
+    gsap.registerPlugin(ScrollTrigger);
+    const st = ScrollTrigger.create({
+      trigger: pin.current, start: "top top", end: `+=${N * 75}%`, pin: true, scrub: true, anticipatePin: 1,
+      onUpdate: (self) => { const i = Math.min(N - 1, Math.floor(self.progress * N)); setStep((p) => (p === i ? p : i)); },
+    });
+    return () => { st.kill(); setStep(0); };
+  }, [pinned]);
+
+  const heading = (
+    <h2 className="h-display text-5xl md:text-6xl">You ask.<br /><span className="grad">He verifies first.</span></h2>
+  );
+
+  if (!pinned) {
+    return (
+      <section id="introduction" className="mx-auto max-w-3xl px-5 py-24">
+        {heading}
+        <div className="mt-14 space-y-16">
+          {STEPS.map((s, i) => (
+            <article key={s.id}>
+              <StepText i={i} />
+              <div className="glass mt-6 rounded-2xl p-4"><s.Card /></div>
+            </article>
+          ))}
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section id="introduction">
+      <div ref={pin} className="mx-auto grid h-screen max-w-6xl grid-cols-[minmax(0,5fr)_minmax(0,6fr)] items-center gap-12 px-5 pt-16">
+        <div>
+          {heading}
+          <div className="mt-8"><Wheel step={step} /></div>
+          <div className="mt-8 min-h-[170px]" aria-live="polite"><StepText i={step} /></div>
+        </div>
+        <Panel i={step} />
+      </div>
+    </section>
+  );
+}

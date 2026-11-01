@@ -1,12 +1,18 @@
 {
   "name": "vetto",
-  "version": "0.1.0",
   "private": true,
-  "packageManager": "pnpm@12.15.0",
+  "version": "0.1.0",
+  "packageManager": "pnpm@9.15.0",
+  "engines": { "node": ">=22" },
   "scripts": {
     "dev": "pnpm --filter @vetto/web dev",
     "build": "pnpm --filter @vetto/web build",
-    "lint": "pnpm --filter @vetto/web lint",
-    "typecheck": "pnpm --filter @vetto/web typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "db:migrate": "pnpm --filter @vetto/web db:migrate"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "5.7.3"
   }
 }
