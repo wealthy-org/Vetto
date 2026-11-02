@@ -171,7 +171,7 @@ export function Landing() {
       <footer className="mx-auto mt-16 max-w-6xl px-5 pb-10">
         <div className="flex flex-col justify-between gap-8 border-t border-white/8 pt-10 md:flex-row">
           <div><Logo /><p className="mt-3 max-w-xs text-sm text-white/50">You ask. He checks. You decide.</p></div>
-          <div className="grid grid-cols-3 gap-10 text-sm">
+          <div className="grid grid-cols-2 gap-x-8 gap-y-8 text-sm sm:gap-x-10">
             {[["Site", [["Introduction", "#introduction"], ["Security", "#security"], ["What’s live", "#status"]]], ["Product", [["Launch app", "/app"], ["Docs", "/docs"], ["Sign in", "/sign-in"]]]].map(([h, links]) => (
               <div key={h as string}><div className="mb-3 text-xs text-white/40">{h as string}</div><ul className="space-y-2">{(links as string[][]).map(([t, href]) => (<li key={t}><Link href={href!} className="text-white/75 hover:text-white">{t}</Link></li>))}</ul></div>
             ))}

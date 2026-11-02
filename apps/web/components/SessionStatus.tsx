@@ -40,11 +40,11 @@ export function SessionStatus() {
   }
 
   if (error) return <span role="status" aria-live="polite" className="chip text-peach" title={error}>Session unavailable</span>;
-  if (!session) return <span role="status" aria-live="polite" className="chip">Checking session…</span>;
+  if (!session) return <span role="status" aria-live="polite" className="chip"><span className="sm:hidden">Checking…</span><span className="hidden sm:inline">Checking session…</span></span>;
   if (!session.authenticated || !session.wallet) {
     return (
       <div className="flex items-center gap-3">
-        <span className="chip !border-lilac/30 text-lilac">Preview mode · signing off</span>
+        <span className="chip !border-lilac/30 text-lilac"><span className="sm:hidden">Preview</span><span className="hidden sm:inline">Preview mode · signing off</span></span>
         <Link href="/sign-in" className="text-white/70 hover:text-white">Sign in</Link>
       </div>
     );
@@ -52,7 +52,7 @@ export function SessionStatus() {
 
   return (
     <div className="flex items-center gap-3">
-      <span className="chip !border-lilac/30 text-lilac" title={session.wallet.address}>Wallet session · signing off</span>
+      <span className="chip !border-lilac/30 text-lilac" title={session.wallet.address}><span className="sm:hidden">Wallet</span><span className="hidden sm:inline">Wallet session · signing off</span></span>
       <button type="button" onClick={() => void signOut()} className="text-white/70 hover:text-white">Sign out</button>
     </div>
   );

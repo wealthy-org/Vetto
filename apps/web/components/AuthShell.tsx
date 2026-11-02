@@ -15,12 +15,12 @@ export function AuthShell({ mode }: { mode: "sign-in" | "sign-up" }) {
         <Link href="/"><Logo /></Link>
         <div className="flex items-center gap-5 text-white/70"><Link href="/" className="hover:text-white">Back to site</Link><Link href="/docs" className="hover:text-white">Docs</Link></div>
       </header>
-      <main className="mx-auto grid w-full max-w-4xl flex-1 items-center gap-5 px-5 pb-10 md:grid-cols-[1.2fr_1fr]">
+      <main className="mx-auto grid w-full min-w-0 max-w-4xl flex-1 items-center gap-5 px-5 pb-10 md:grid-cols-[1.2fr_1fr]">
         <section className="glass relative hidden h-[520px] overflow-hidden rounded-[28px] md:block" aria-label="Vetto">
           <div className="absolute left-5 top-5 max-w-[250px]"><SpeechBubble>{up ? "A new client. Splendid. This takes a minute, and I will never ask for a seed phrase." : "Back already. Your funds are exactly where you left them."}</SpeechBubble></div>
           <Banker pose={up ? "wave" : "idle"} className="absolute bottom-[-30px] left-1/2 h-[470px] w-auto -translate-x-1/2" />
         </section>
-        <section className="glass rounded-[28px] p-6" aria-labelledby="auth-h">
+        <section className="glass min-w-0 rounded-[28px] p-5 sm:p-6" aria-labelledby="auth-h">
           <p className="text-sm text-lilac">{up ? "Create your account" : "Sign in"}</p>
           <h1 id="auth-h" className="h-display mt-1 text-4xl">{up ? "Meet your banker." : "Back to your banker."}</h1>
 

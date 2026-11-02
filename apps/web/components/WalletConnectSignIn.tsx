@@ -106,11 +106,11 @@ export function WalletConnectSignIn({ mode }: { mode: "sign-in" | "sign-up" }) {
         type="button"
         disabled={!configured || busy}
         onClick={() => void signIn()}
-        className="flex w-full items-center gap-3 rounded-xl border border-white/10 bg-white/[.04] px-4 py-3 text-left text-sm font-medium disabled:cursor-not-allowed disabled:opacity-70"
+        className="flex w-full min-w-0 items-center gap-3 rounded-xl border border-white/10 bg-white/[.04] px-4 py-3 text-left text-sm font-medium disabled:cursor-not-allowed disabled:opacity-70"
       >
         <IconLock className="h-4 w-4" />
-        {busy ? progress : mode === "sign-up" ? "Create account with WalletConnect" : "Sign in with WalletConnect"}
-        <span className="ml-auto"><StatusChip status={configured ? "planned" : "unavailable"} /></span>
+        <span className="min-w-0 flex-1">{busy ? progress : mode === "sign-up" ? "Create account with WalletConnect" : "Sign in with WalletConnect"}</span>
+        <span className="shrink-0"><StatusChip status={configured ? "planned" : "unavailable"} /></span>
       </button>
       {busy && <p role="status" className="mt-2 text-xs text-white/55">{progress}</p>}
       {error && <p role="alert" className="mt-2 text-xs text-peach">{error}</p>}
