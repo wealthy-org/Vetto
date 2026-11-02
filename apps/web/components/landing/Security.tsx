@@ -1,53 +1,105 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { Mark } from "../Logo";
-import { SpeechBubble } from "../Banker";
+import gsap from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
+import { Banker } from "../Banker";
 import { IconKey, IconLock } from "../icons";
 
-type VaultState = "checking" | "blocked" | "checked";
-const COLORS: Record<VaultState, string> = { checking: "#9a7bf2", blocked: "#ff6f7d", checked: "#7ee2a8" };
-const LABEL: Record<VaultState, string> = { checking: "Checking", blocked: "Blocked", checked: "Checked" };
+type VaultState = "sealed" | "checking" | "blocked" | "checked";
+const COLORS: Record<VaultState, string> = { sealed: "#9a7bf2", checking: "#9a7bf2", blocked: "#ff6f7d", checked: "#7ee2a8" };
+const LABEL: Record<VaultState, string> = { sealed: "Sealed", checking: "Checking", blocked: "Blocked", checked: "Checked" };
 
-// Timeline of one loop. Sample requests only — see caption in the section.
-const SCRIPT: { at: number; state: VaultState; say: string; blockedCard: boolean; passedCard: boolean }[] = [
-  { at: 0, state: "checking", say: "A site is asking for something. Reading the request…", blockedCard: false, passedCard: false },
-  { at: 1500, state: "blocked", say: "That one wants every token you own, with no limit. It stays outside.", blockedCard: true, passedCard: false },
-  { at: 4300, state: "checking", say: "This one asks for exactly 10 USDG. Replaying it on a copy of the chain…", blockedCard: true, passedCard: false },
-  { at: 6200, state: "checked", say: "Clean: exact amount, verified spender. Confirming is up to you.", blockedCard: true, passedCard: true },
+// One pass through the vault, driven by scroll progress (0..1). Sample requests only, see the caption below.
+const SCRIPT: { from: number; state: VaultState; say: string; blockedCard: boolean; passedCard: boolean }[] = [
+  { from: 0, state: "sealed", say: "Two sites, two requests. Neither one goes straight to your wallet.", blockedCard: false, passedCard: false },
+  { from: 0.1, state: "checking", say: "A site is asking for something. Reading the request…", blockedCard: false, passedCard: false },
+  { from: 0.38, state: "blocked", say: "That one wants every token you own, with no limit. It stays in the vault.", blockedCard: true, passedCard: false },
+  { from: 0.52, state: "checking", say: "This one asks for exactly 10 USDG. Checking it on a chain copy now.", blockedCard: true, passedCard: false },
+  { from: 0.74, state: "checked", say: "Clean. It’s yours to confirm, or not.", blockedCard: true, passedCard: true },
 ];
-const LOOP_MS = 11000;
+const stageAt = (p: number) => SCRIPT.reduce((acc, s, i) => (p >= s.from ? i : acc), 0);
+const clamp = (v: number) => Math.max(0, Math.min(1, v));
 
-function useInView<T extends Element>() {
-  const ref = useRef<T>(null);
-  const [inView, setIn] = useState(false);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const io = new IntersectionObserver(([e]) => setIn(!!e?.isIntersecting), { threshold: 0.35 });
-    io.observe(el);
-    return () => io.disconnect();
-  }, []);
-  return [ref, inView] as const;
+// Request routes in the vault's 420x420 space (the ring sits at r≈100 around 210,210).
+const BAD_IN = "M296 -18C352 30 340 96 283 135";
+const GOOD_IN = "M312 -18C380 50 330 90 255 114";
+const GOOD_OUT = "M283 282C322 312 352 336 378 380";
+
+type Route = { path: SVGPathElement | null; trail: SVGPathElement | null; head: SVGGElement | null; pill: SVGGElement | null };
+
+/** Draws a route up to t (0..1): fading trail, arrow head and request pill riding the tip. */
+function drawRoute(r: Route, t: number, opts: { pill?: boolean; fade?: number } = {}) {
+  const { path, trail, head, pill } = r;
+  if (!path || !trail || !head) return;
+  const len = path.getTotalLength();
+  const at = len * t;
+  const tail = Math.min(at, len * 0.6);
+  trail.setAttribute("stroke-dasharray", `${tail} ${len + 10}`);
+  trail.setAttribute("stroke-dashoffset", `${-(at - tail)}`);
+  const pt = path.getPointAtLength(at);
+  const back = path.getPointAtLength(Math.max(0, at - 2));
+  const angle = (Math.atan2(pt.y - back.y, pt.x - back.x) * 180) / Math.PI;
+  head.setAttribute("transform", `translate(${pt.x.toFixed(1)} ${pt.y.toFixed(1)}) rotate(${angle.toFixed(1)})`);
+  const vis = t <= 0 ? 0 : (opts.fade ?? 1);
+  trail.style.opacity = String(vis);
+  head.style.opacity = String(vis);
+  if (pill) {
+    const lead = path.getPointAtLength(Math.max(0, at - len * 0.18));
+    pill.setAttribute("transform", `translate(${lead.x.toFixed(1)} ${(lead.y - 16).toFixed(1)})`);
+    pill.style.opacity = String(opts.pill === false ? 0 : vis);
+  }
 }
 
-function Vault({ state }: { state: VaultState }) {
+function Vault({ state, refs }: { state: VaultState; refs: React.MutableRefObject<Record<string, SVGElement | null>> }) {
   const c = COLORS[state];
+  const set = (k: string) => (el: SVGElement | null) => { refs.current[k] = el; };
+  const arcs = [0, 1, 2, 3].map((k) => {
+    const a0 = (k * 90 + 14) * (Math.PI / 180);
+    const a1 = (k * 90 + 76) * (Math.PI / 180);
+    const p = (a: number) => `${(210 + Math.cos(a) * 100).toFixed(1)} ${(210 + Math.sin(a) * 100).toFixed(1)}`;
+    return `M${p(a0)}A100 100 0 0 1 ${p(a1)}`;
+  });
+  const Arrowhead = () => <path d="M-7 -5 3 0-7 5Z" />;
   return (
-    <div className="relative mx-auto aspect-square w-full max-w-[380px]" role="img" aria-label={`Vault status: ${LABEL[state]}`}>
-      <svg viewBox="0 0 300 300" className="absolute inset-0 h-full w-full">
-        <defs><path id="ringtext" d="M150 150m-124 0a124 124 0 1 1 248 0a124 124 0 1 1-248 0" /></defs>
-        <circle cx="150" cy="150" r="146" fill="none" stroke="rgba(255,255,255,.05)" />
-        <g style={{ transformOrigin: "150px 150px" }} className="ring-spin-slow">
-          <text fontSize="9" letterSpacing="3.2" fill="rgba(201,182,255,.45)" fontWeight="600"><textPath href="#ringtext">{"VETTO · ".repeat(14)}</textPath></text>
+    <div className="relative mx-auto aspect-square w-full max-w-[min(400px,42vh)] overflow-visible" role="img" aria-label={`Vault status: ${LABEL[state]}`}>
+      <svg viewBox="0 0 420 420" className="absolute inset-0 h-full w-full overflow-visible">
+        <defs>
+          <path id="vault-text" d="M210 210m-128 0a128 128 0 1 1 256 0a128 128 0 1 1-256 0" />
+          <radialGradient id="vault-glow"><stop stopColor="#5b34d6" stopOpacity=".45" /><stop offset="1" stopColor="#5b34d6" stopOpacity="0" /></radialGradient>
+        </defs>
+        <circle cx="210" cy="210" r="214" fill="none" stroke="rgba(201,182,255,.22)" strokeDasharray="2 7" />
+        <circle cx="210" cy="210" r="160" fill="url(#vault-glow)" />
+        <circle cx="210" cy="210" r="146" fill="none" stroke="rgba(201,182,255,.3)" strokeWidth="9" strokeDasharray="1 5" />
+        <g style={{ transformOrigin: "210px 210px" }} className="ring-spin-slow">
+          <text fontSize="10" letterSpacing="4" fill="rgba(201,182,255,.55)" fontWeight="600"><textPath href="#vault-text">{"vetto · 0110 · ".repeat(9)}</textPath></text>
         </g>
-        <circle cx="150" cy="150" r="104" fill="none" stroke={c} strokeOpacity=".25" strokeWidth="3" style={{ transition: "stroke .5s" }} />
-        <circle cx="150" cy="150" r="104" fill="none" stroke={c} strokeWidth="3" strokeLinecap="round" strokeDasharray={state === "checking" ? "120 534" : "654 0"}
-          className={state === "checking" ? "vault-orbit" : ""} style={{ transformOrigin: "150px 150px", transition: "stroke .5s, stroke-dasharray .6s" }} />
-        <circle cx="150" cy="150" r="78" fill="rgba(12,9,37,.9)" stroke="rgba(255,255,255,.08)" />
+        <g style={{ transformOrigin: "210px 210px" }} className={state === "checking" ? "vault-orbit" : ""}>
+          {arcs.map((d, k) => <path key={k} d={d} fill="none" stroke={c} strokeWidth="4" strokeLinecap="round" style={{ transition: "stroke .5s" }} />)}
+        </g>
+        <circle cx="210" cy="210" r="66" fill="rgba(12,9,37,.92)" stroke="rgba(255,255,255,.1)" />
+
+        {/* request routes (positions are set from scroll progress) */}
+        <g ref={set("badG")} style={{ color: "#ff6f7d" }}>
+          <path ref={set("badPath")} d={BAD_IN} fill="none" stroke="none" />
+          <path ref={set("badTrail")} d={BAD_IN} fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" opacity="0" />
+          <g ref={set("badHead")} fill="currentColor" opacity="0"><Arrowhead /></g>
+          <g ref={set("badPill")} opacity="0"><rect x="-62" y="-11" width="124" height="22" rx="11" fill="rgba(60,14,30,.92)" stroke="currentColor" strokeOpacity=".7" /><text textAnchor="middle" y="4" fontSize="10.5" fontWeight="600" fill="#ffb3bb">Approve all tokens</text></g>
+        </g>
+        <g ref={set("goodG")} style={{ color: "#7ee2a8" }}>
+          <path ref={set("goodInPath")} d={GOOD_IN} fill="none" stroke="none" />
+          <path ref={set("goodInTrail")} d={GOOD_IN} fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" opacity="0" />
+          <g ref={set("goodInHead")} fill="currentColor" opacity="0"><Arrowhead /></g>
+          <g ref={set("goodPill")} opacity="0"><rect x="-76" y="-11" width="152" height="22" rx="11" fill="rgba(10,44,34,.92)" stroke="currentColor" strokeOpacity=".7" /><text textAnchor="middle" y="4" fontSize="10.5" fontWeight="600" fill="#b9f3d2">Exact approval · 10 USDG</text></g>
+          <path ref={set("goodOutPath")} d={GOOD_OUT} fill="none" stroke="none" />
+          <path ref={set("goodOutTrail")} d={GOOD_OUT} fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" opacity="0" />
+          <g ref={set("goodOutHead")} fill="currentColor" opacity="0"><Arrowhead /></g>
+        </g>
       </svg>
       <div className="absolute inset-0 grid place-items-center">
-        <div className="flex flex-col items-center gap-2"><Mark size={44} />
-          <span className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold text-ink transition-colors duration-500" style={{ background: c }}>{LABEL[state]}</span></div>
+        <div className="flex flex-col items-center gap-2">
+          <span className="block h-[74px] w-[74px] overflow-hidden rounded-full bg-[#3a2c88]/60"><Banker eyes={false} fade={false} viewBox="120 40 296 270" className="h-full w-full" /></span>
+          <span className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold text-ink transition-colors duration-500" style={{ background: c }}>{LABEL[state]}</span>
+        </div>
       </div>
     </div>
   );
@@ -97,44 +149,10 @@ export function HoldToConfirm() {
   );
 }
 
-export function Security() {
-  const [ref, inView] = useInView<HTMLElement>();
-  const [i, setI] = useState(0);
 
-  useEffect(() => {
-    if (!inView) return;
-    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (reduce) { setI(SCRIPT.length - 1); return; }
-    const ids: number[] = [];
-    const run = () => {
-      setI(0);
-      SCRIPT.forEach((s, idx) => ids.push(window.setTimeout(() => setI(idx), s.at)));
-      ids.push(window.setTimeout(run, LOOP_MS));
-    };
-    run();
-    return () => ids.forEach(clearTimeout);
-  }, [inView]);
-
-  const cur = SCRIPT[i]!;
+function MoreCards() {
   const [on, setOn] = useState(false);
-
   return (
-    <section id="security" ref={ref} className="relative mx-auto max-w-6xl px-5 py-28">
-      <div className="grid items-center gap-10 lg:grid-cols-[5fr_6fr]">
-        <div>
-          <h2 className="h-display text-5xl md:text-6xl">Nothing reaches your wallet <span className="grad">unchecked.</span></h2>
-          <p className="mt-5 max-w-md text-white/60">Every request goes through the vault first. Anything asking for more than the task needs is stopped there, and you get the reason.</p>
-          <div className="mt-8 max-w-sm"><SpeechBubble><span key={i} className="step-in block">{cur.say}</span></SpeechBubble></div>
-        </div>
-        <Vault state={cur.state} />
-      </div>
-
-      <div className="mx-auto mt-10 grid max-w-3xl gap-4 sm:grid-cols-2" aria-live="polite">
-        <div className="min-h-[168px]">{cur.blockedCard && <RequestCard tone="bad" title="Approve all tokens, unlimited" rows={[["Spender", "Not verified"], ["Domain", "4 days old"]]}><p className="mt-2 text-coral">Never reached your wallet.</p></RequestCard>}</div>
-        <div className="min-h-[168px]">{cur.passedCard && <RequestCard tone="ok" title="Exact approval, 10 USDG" rows={[["Spender", "Verified router"], ["Dry run", "Moves 10 USDG only"]]}><div className="mt-3 flex gap-2"><span className="btn btn-primary !py-1.5 text-xs">Confirm</span><span className="btn btn-ghost !py-1.5 text-xs">Decline</span></div></RequestCard>}</div>
-      </div>
-      <p className="mt-2 text-center text-[11px] text-white/35">Sample requests for illustration. The sandboxed scan itself is a planned feature (see What’s live).</p>
-
       <div className="mt-16 grid gap-4 md:grid-cols-2">
         <div className="glass rounded-3xl p-6">
           <h3 className="font-semibold">Replayed before you sign</h3>
@@ -162,6 +180,86 @@ export function Security() {
         </div>
         <div className="glass rounded-3xl p-6"><h3 className="mb-1 font-semibold">You confirm</h3><p className="mb-5 text-sm text-white/55">Swaps, mints and claims all wait for you.</p><HoldToConfirm /></div>
       </div>
+  );
+}
+
+export function Security() {
+  const wrap = useRef<HTMLDivElement>(null);
+  const refs = useRef<Record<string, SVGElement | null>>({});
+  const [pinned, setPinned] = useState(false);
+  const [i, setI] = useState(SCRIPT.length - 1);
+  const iRef = useRef(SCRIPT.length - 1);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1024px) and (prefers-reduced-motion: no-preference)");
+    const sync = () => setPinned(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+
+  useEffect(() => {
+    const r = refs.current;
+    const route = (a: string, b: string, c: string, d?: string): Route => ({
+      path: r[a] as SVGPathElement | null, trail: r[b] as SVGPathElement | null, head: r[c] as SVGGElement | null, pill: d ? (r[d] as SVGGElement | null) : null,
+    });
+    const bad = route("badPath", "badTrail", "badHead", "badPill");
+    const goodIn = route("goodInPath", "goodInTrail", "goodInHead", "goodPill");
+    const goodOut = route("goodOutPath", "goodOutTrail", "goodOutHead");
+
+    const apply = (p: number) => {
+      const next = stageAt(p);
+      if (next !== iRef.current) { iRef.current = next; setI(next); }
+      const badT = clamp((p - 0.1) / 0.26);
+      drawRoute(bad, badT, { fade: 1 - clamp((p - 0.4) / 0.1), pill: badT < 1 || p < 0.4 });
+      const inT = clamp((p - 0.5) / 0.2);
+      drawRoute(goodIn, inT, { fade: 1 - clamp((p - 0.74) / 0.08), pill: inT < 1 });
+      drawRoute(goodOut, clamp((p - 0.76) / 0.2));
+    };
+
+    if (!pinned) { apply(1); return; }
+    gsap.registerPlugin(ScrollTrigger);
+    iRef.current = -1;
+    apply(0);
+    const st = ScrollTrigger.create({ trigger: wrap.current, start: "top top", end: "bottom bottom", scrub: 0.6, onUpdate: (self) => apply(self.progress) });
+    return () => { st.kill(); iRef.current = SCRIPT.length - 1; setI(SCRIPT.length - 1); };
+  }, [pinned]);
+
+  const cur = SCRIPT[i]!;
+  return (
+    <section id="security" className="relative">
+      <div ref={wrap} className={pinned ? "relative h-[340vh]" : "relative"}>
+        <div className={`mx-auto max-w-6xl px-5 ${pinned ? "sticky top-0 flex h-screen flex-col justify-center pt-16" : "py-24"}`}>
+          <div className="grid items-center gap-10 lg:grid-cols-[5fr_6fr]">
+            <div>
+              <p className="mb-3 text-sm text-lilac">Security</p>
+              <h2 className="h-display text-5xl md:text-6xl">Your wallet stays <span className="grad">out of it.</span></h2>
+              <p className="mt-5 max-w-md text-white/60">Every request goes through Vetto’s vault first. Anything that asks for more than the task needs is stopped there, and you get the reason.</p>
+              <div className="mt-8 flex max-w-sm items-start gap-3">
+                <span className="mt-1 block h-9 w-9 shrink-0 overflow-hidden rounded-full bg-[#3a2c88]/60"><Banker eyes={false} fade={false} viewBox="120 40 296 270" className="h-full w-full" /></span>
+                <div className="glass min-h-[64px] rounded-2xl rounded-tl-md px-4 py-3 text-[13px] leading-snug text-white/90" role="status" aria-live="polite"><span key={i} className="step-in block">{cur.say}</span></div>
+              </div>
+            </div>
+            <div className="pt-14">
+              <div className="glass relative mx-auto mb-2 w-fit rounded-xl px-3 py-2 text-[11px] text-white/55">
+                <div className="mb-1.5">Sites you open</div>
+                <div className="flex gap-2">
+                  <span className="flex items-center gap-1.5 rounded-lg bg-white/[.05] px-2 py-1 text-white/80"><i className="h-1.5 w-1.5 rounded-full bg-coral" />claim-hood-rewards.xyz</span>
+                  <span className="flex items-center gap-1.5 rounded-lg bg-white/[.05] px-2 py-1 text-white/80"><i className="h-1.5 w-1.5 rounded-full bg-mint" />example-dex.app</span>
+                </div>
+              </div>
+              <Vault state={cur.state} refs={refs} />
+            </div>
+          </div>
+
+          <div className="mx-auto mt-6 grid w-full max-w-3xl gap-4 sm:grid-cols-2" aria-live="polite">
+            <div className="min-h-[150px]">{cur.blockedCard && <RequestCard tone="bad" title="Approve all tokens, unlimited" rows={[["Spender", "Not verified"], ["Domain", "4 days old"]]}><p className="mt-2 text-coral">Never reached your wallet.</p></RequestCard>}</div>
+            <div className="min-h-[150px]">{cur.passedCard && <RequestCard tone="ok" title="Exact approval, 10 USDG" rows={[["Spender", "Verified router"], ["Dry run", "Moves 10 USDG only"]]}><div className="mt-3 flex gap-2"><span className="btn btn-primary !py-1.5 text-xs">Confirm</span><span className="btn btn-ghost !py-1.5 text-xs">Decline</span></div></RequestCard>}</div>
+          </div>
+          <p className="mt-2 text-center text-[11px] text-white/35">Sample requests for illustration. The sandboxed scan itself is a planned feature (see What’s live).</p>
+        </div>
+      </div>
+      <div className="mx-auto max-w-6xl px-5 pb-28"><MoreCards /></div>
     </section>
   );
 }

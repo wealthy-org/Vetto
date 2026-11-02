@@ -14,7 +14,7 @@ const STEPS = [
   { id: "swap", Icon: IconSwap, Card: SampleRoute, cap: "route-direct", pose: "clasp" as Pose, title: "Real routes, ranked by what you keep.",
     body: "Say the trade in plain words. Vetto lists only routes that can actually execute and orders them by what lands in your wallet after fees.",
     cmd: "swap 2500 USDG to ETH", say: "With live routes, the one that pays you the most sits on top. If only one exists, you see one." },
-  { id: "private", Icon: IconLock, Card: SamplePrivate, cap: "private-relay", pose: "point" as Pose, title: "Private, when it's truly possible.",
+  { id: "private", Icon: IconLock, Card: SamplePrivate, cap: "private-relay", pose: "think" as Pose, title: "Private, when it's truly possible.",
     body: "Ask for private submission and the order skips the public mempool, but only through a relay verified for this chain. Otherwise the switch stays off and says why.",
     cmd: "swap 2 ETH to USDG privately", say: "No relay, no pretending. I'll tell you plainly instead of dressing up a public route." },
   { id: "check", Icon: IconShield, Card: SampleCheck, cap: "dapp-sandbox", pose: "idle" as Pose, title: "Inspected before you connect.",
@@ -23,39 +23,66 @@ const STEPS = [
   { id: "agent", Icon: IconKey, Card: SampleTask, cap: "agent-tasks", pose: "point" as Pose, title: "A capped burner does the clicking.",
     body: "Hand over a mint or claim. It runs from a burner wallet you fund with a small, fixed budget. Your main wallet never visits the site.",
     cmd: "mint the NFT at nft-mint-pass.app max 0.01 ETH", say: "Dry run first, then your explicit go. Worst case, you lose the burner's balance." },
-  { id: "live", Icon: IconBrowser, Card: SampleLive, cap: "live-browser", pose: "wave" as Pose, title: "Watch it work. Grab the controls.",
+  { id: "live", Icon: IconBrowser, Card: SampleLive, cap: "live-browser", pose: "live" as Pose, title: "Watch it work. Grab the controls.",
     body: "Each task streams from an isolated machine. Watch read-only, take over at any point, and end the session with everything wiped.",
     cmd: "open demo-dex.app live", say: "My screen is read-only until you ask for the controls." },
 ];
 const N = STEPS.length;
 const STEP_DEG = 360 / N;
 
+function arc(r: number, from: number, to: number) {
+  const p = (d: number) => [125 + Math.cos(d) * r, 125 + Math.sin(d) * r];
+  const [x1, y1] = p(from);
+  const [x2, y2] = p(to);
+  return `M${x1!.toFixed(1)} ${y1!.toFixed(1)}A${r} ${r} 0 0 1 ${x2!.toFixed(1)} ${y2!.toFixed(1)}`;
+}
+
 function Wheel({ step }: { step: number }) {
   const wheel = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = wheel.current;
     if (!el) return;
-    gsap.to(el, { rotation: -STEP_DEG * step, duration: 0.9, ease: "power3.out" });
-    gsap.to(el.querySelectorAll("[data-node]"), { rotation: STEP_DEG * step, duration: 0.9, ease: "power3.out" });
+    // the active node always docks at 3 o'clock, where the chevrons point
+    gsap.to(el, { rotation: 90 - STEP_DEG * step, duration: 0.9, ease: "power3.out" });
+    gsap.to(el.querySelectorAll("[data-node]"), { rotation: STEP_DEG * step - 90, duration: 0.9, ease: "power3.out" });
   }, [step]);
   const R = 92;
+  const gap = 0.3; // radians left free around each node for the arrow arcs
   return (
     <div className="relative mx-auto h-[250px] w-[250px]" aria-hidden>
-      <div className="absolute inset-0 rounded-full border border-white/10" />
+      <div className="absolute inset-0 rounded-full border border-white/10 bg-[radial-gradient(circle,rgba(110,70,230,.22),transparent_70%)]" />
+      <svg viewBox="0 0 250 250" className="ring-spin-slow absolute inset-0 h-full w-full">
+        <defs><path id="wheel-text" d="M125 125m-62 0a62 62 0 1 1 124 0a62 62 0 1 1-124 0" /></defs>
+        <text fontSize="7.5" letterSpacing="2.6" fill="rgba(201,182,255,.45)" fontWeight="600"><textPath href="#wheel-text">{"vetto · ".repeat(9)}</textPath></text>
+      </svg>
       <div ref={wheel} className="absolute inset-0">
+        <svg viewBox="0 0 250 250" className="absolute inset-0 h-full w-full">
+          <defs>
+            <linearGradient id="wheel-arc" x1="0" y1="0" x2="1" y2="1"><stop stopColor="#c9b6ff" /><stop offset="1" stopColor="#ffb59a" /></linearGradient>
+            <marker id="wheel-head" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="4.2" markerHeight="4.2" orient="auto"><path d="M1 1 9 5 1 9Z" fill="#ffb59a" /></marker>
+          </defs>
+          {STEPS.map((s, i) => {
+            const a0 = (i / N) * Math.PI * 2 - Math.PI / 2 + gap;
+            const a1 = ((i + 1) / N) * Math.PI * 2 - Math.PI / 2 - gap;
+            const on = i === step;
+            return <path key={s.id} d={arc(R, a0, a1)} fill="none" stroke={on ? "url(#wheel-arc)" : "rgba(201,182,255,.28)"} strokeWidth={on ? 6 : 5} strokeLinecap="round" markerEnd={on ? "url(#wheel-head)" : undefined} style={{ transition: "stroke .5s" }} />;
+          })}
+        </svg>
         {STEPS.map((s, i) => {
           const a = (i / N) * Math.PI * 2 - Math.PI / 2;
           const active = i === step;
           return (
             <div key={s.id} data-node className="absolute grid h-11 w-11 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border transition-colors duration-500"
-              style={{ left: `${125 + Math.cos(a) * R}px`, top: `${125 + Math.sin(a) * R}px`, background: active ? "linear-gradient(120deg,#c9b6ff,#ffb59a)" : "rgba(255,255,255,.05)", borderColor: active ? "transparent" : "rgba(255,255,255,.12)", color: active ? "#1a1033" : "rgba(255,255,255,.55)" }}>
+              style={{ left: `${125 + Math.cos(a) * R}px`, top: `${125 + Math.sin(a) * R}px`, background: active ? "linear-gradient(120deg,#c9b6ff,#ffb59a)" : "rgba(14,10,40,.9)", borderColor: active ? "transparent" : "rgba(255,255,255,.12)", color: active ? "#1a1033" : "rgba(255,255,255,.55)" }}>
               <s.Icon />
             </div>
           );
         })}
       </div>
       <div className="absolute left-1/2 top-1/2 grid h-20 w-20 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full glass"><Mark size={34} /></div>
-      <IconArrow className="absolute right-[-6px] top-1/2 h-5 w-5 -translate-y-1/2 text-peach" />
+      <div className="absolute right-[-30px] top-1/2 flex -translate-y-1/2 text-peach">
+        {[0, 1, 2].map((k) => <span key={k} className="chev -mr-1.5" style={{ animationDelay: `${k * 0.18}s` }}><IconArrow className="h-4 w-4" /></span>)}
+      </div>
     </div>
   );
 }
@@ -80,7 +107,7 @@ function Panel({ i }: { i: number }) {
   return (
     <div className="glass relative h-[560px] overflow-hidden rounded-[28px]">
       <div className="text-field pointer-events-none absolute inset-0" />
-      <Banker pose={s.pose} className="pointer-events-none absolute -left-6 bottom-[-40px] h-[500px] w-auto" />
+      <Banker pose={s.pose} className="pointer-events-none absolute -left-20 bottom-[-40px] h-[450px] w-auto max-w-none" />
       <div key={`b-${s.id}`} className="step-in absolute left-5 top-5 max-w-[250px]"><SpeechBubble>{s.say}</SpeechBubble></div>
       <div key={`c-${s.id}`} className="step-in glass absolute bottom-6 right-6 top-28 w-[54%] overflow-hidden rounded-2xl p-4"><s.Card /></div>
     </div>

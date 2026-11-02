@@ -1,12 +1,12 @@
 "use client";
 import Link from "next/link";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { Banker } from "./Banker";
 import { Logo } from "./Logo";
 import { Nav } from "./Nav";
-import { TextLensBackground } from "./TextLensBackground";
+import { TextLensBackground, type LensControl } from "./TextLensBackground";
 import { IconArrow } from "./icons";
 import { Cta } from "./landing/Cta";
 import { Security } from "./landing/Security";
@@ -15,80 +15,92 @@ import { Status } from "./landing/Status";
 
 const CHIPS = ["Swap 2,500 USDG to ETH", "Is fastclaim-hood.xyz safe?", "Mint the NFT at nft-mint-pass.app max 0.01 ETH"];
 
+/**
+ * Scroll story, one pinned stage (stage height = STAGE_VH, the stage itself is 100svh and sticky):
+ *   0 → 0.9   hero copy lifts away, the lens slowly relaxes into a flat grid (the grid stays)
+ *   0.6 → 1.7 Vetto rises from the bottom, centred
+ *   2.0 → 3.0 Vetto slides right while the "Meet Vetto" copy appears on the left
+ *   2.95      Vetto starts waving; then the page scrolls on normally
+ * Values are in viewport heights ("screens" of scroll).
+ */
+const STAGE_VH = 430;
+const SCROLL_SCREENS = STAGE_VH / 100 - 1; // 3.3 screens of scrubbed scroll
+
 export function Landing() {
+  const wrap = useRef<HTMLDivElement>(null);
+  const lens = useRef<LensControl>({ fade: 0, kick: () => {} });
+
   useEffect(() => {
     gsap.registerPlugin(ScrollTrigger);
+    const root = wrap.current;
+    if (!root) return;
+    const q = <T extends HTMLElement>(sel: string) => root.querySelector<T>(sel);
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const mm = gsap.matchMedia();
 
-    mm.add("(prefers-reduced-motion: no-preference)", () => {
-      // The headline rises line by line over the text lens.
-      const tl = gsap.timeline({ defaults: { ease: "expo.out" } });
-      tl.from("[data-hero-pill]", { opacity: 0, y: 10, duration: 0.7 })
-        .from("[data-line]", { yPercent: 110, duration: 1.1, stagger: 0.12 }, "-=0.4")
-        .from("[data-hero-fade]", { opacity: 0, y: 14, duration: 0.8, stagger: 0.1 }, "-=0.6");
+    mm.add({ desktop: "(min-width: 1024px)", mobile: "(max-width: 1023px)" }, (ctx) => {
+      const desktop = !!(ctx.conditions as { desktop?: boolean }).desktop;
+      const char = q("[data-char]");
+      const banker = q<HTMLElement>("[data-char] svg");
+      const glow = q("[data-glow]");
+      if (!char || !banker) return;
 
-      const hero = document.querySelector<HTMLElement>("[data-hero]");
-      const meet = document.querySelector<HTMLElement>("#meet");
-      const banker = meet?.querySelector<HTMLElement>("[data-rise]");
-
-      if (hero) {
-        gsap.to("[data-hero-copy]", {
-          y: -150,
-          opacity: 0,
-          ease: "none",
-          scrollTrigger: { trigger: hero, start: "top top", end: "bottom top", scrub: true },
-        });
-        gsap.to("[data-hero-lens]", {
-          opacity: 0,
-          ease: "none",
-          scrollTrigger: { trigger: hero, start: "top top", end: "bottom top", scrub: true },
-        });
+      // --- page-load intro: the lens zooms in (canvas) while the headline rises line by line.
+      if (!reduced) {
+        const intro = gsap.timeline({ defaults: { ease: "expo.out" } });
+        intro
+          .from("[data-hero-pill]", { opacity: 0, y: 10, duration: 0.8 }, 0.35)
+          .from("[data-line]", { yPercent: 110, duration: 1.2, stagger: 0.12 }, 0.5)
+          .from("[data-hero-fade]", { opacity: 0, y: 14, duration: 0.9, stagger: 0.1 }, 0.95);
       }
 
-      if (meet && banker) {
-        let bankerCenterX = 0;
-        let bankerDocumentCenterY = 0;
-        const measureBanker = () => {
-          gsap.set(banker, { clearProps: "transform,opacity" });
-          const bounds = banker.getBoundingClientRect();
-          bankerCenterX = bounds.left + bounds.width / 2;
-          bankerDocumentCenterY = bounds.top + window.scrollY + bounds.height / 2;
-        };
-        const updateBanker = (progress: number) => {
-          const reveal = Math.min(1, progress / 0.4);
-          const move = Math.min(1, Math.max(0, (progress - 0.4) / 0.6));
-          const centerX = window.innerWidth / 2 - bankerCenterX;
-          const centerY = window.innerHeight / 2 - (bankerDocumentCenterY - window.scrollY);
+      // --- the scroll story (scrubbed, so it plays backwards too)
+      const U = 10 / SCROLL_SCREENS; // timeline units per screen of scroll
+      const H = () => window.innerHeight;
+      const shift = () => (desktop ? window.innerWidth * 0.2 : 0);
 
-          gsap.set(banker, {
-            x: centerX * (1 - move),
-            y: centerY * (1 - move),
-            scale: 0.82 + 0.18 * reveal,
-            opacity: reveal,
-          });
-        };
-        measureBanker();
-        const transition = ScrollTrigger.create({
-          trigger: meet,
-          start: "top 75%",
-          end: "top 10%",
-          scrub: true,
+      gsap.set(char, { transformOrigin: "50% 100%" });
+      gsap.set("[data-meet-copy]", { autoAlpha: 0 });
+      gsap.set("[data-meet-item]", { opacity: 0, y: 26 });
+
+      const tl = gsap.timeline({
+        defaults: { ease: "none" },
+        scrollTrigger: {
+          trigger: root,
+          start: "top top",
+          end: "bottom bottom",
+          scrub: reduced ? true : 0.7,
           invalidateOnRefresh: true,
-          onRefresh: (self) => {
-            measureBanker();
-            updateBanker(self.progress);
+          onUpdate: (self) => {
+            const waving = self.progress * SCROLL_SCREENS >= 2.95;
+            const want = waving ? "wave" : "idle";
+            if (banker.getAttribute("data-pose") !== want) banker.setAttribute("data-pose", want);
           },
-          onUpdate: (self) => updateBanker(self.progress),
-        });
-        updateBanker(transition.progress);
-        gsap.fromTo("[data-meet-copy]", { y: 32, opacity: 0 }, {
-          y: 0,
-          opacity: 1,
-          ease: "none",
-          scrollTrigger: { trigger: meet, start: "top 65%", end: "top 15%", scrub: true },
-        });
-      }
+        },
+      });
+
+      // hero copy leaves
+      tl.to("[data-hero-copy]", { y: -150, autoAlpha: 0, duration: 0.75 * U }, 0)
+        .to("[data-hero-scroll]", { autoAlpha: 0, duration: 0.3 * U }, 0)
+        // the lens slowly relaxes, the grid itself stays
+        .to(lens.current, { fade: 1, duration: 1.8 * U, ease: "power1.inOut", onUpdate: () => lens.current.kick() }, 0.1 * U)
+        // Vetto rises from the bottom
+        .fromTo(char, { y: () => H() * 0.9, opacity: 0, scale: 0.94 }, { y: 0, opacity: 1, scale: 1, duration: 1.1 * U, ease: "power2.out" }, 0.8 * U)
+        // ... then slides to the right, copy appears on the left
+        .to(char, { x: shift, y: desktop ? 0 : () => H() * 0.1, scale: desktop ? 1 : 0.86, duration: 1.0 * U, ease: "power2.inOut" }, 2.0 * U)
+        .to(glow, { "--gx": desktop ? "70%" : "50%", duration: 1.0 * U, ease: "power2.inOut" }, 2.0 * U)
+        .to("[data-meet-copy]", { autoAlpha: 1, duration: 0.01 }, 2.2 * U)
+        .to("[data-meet-item]", { opacity: 1, y: 0, duration: 0.55 * U, stagger: 0.12 * U, ease: "power2.out" }, 2.25 * U)
+        .to({}, { duration: 0.1 }, 10 - 0.1); // pad so the timeline is exactly 10 long
+
+      return () => {
+        tl.scrollTrigger?.kill();
+        tl.kill();
+        lens.current.fade = 0;
+        banker.setAttribute("data-pose", "idle");
+      };
     });
+
     return () => mm.revert();
   }, []);
 
@@ -96,47 +108,60 @@ export function Landing() {
     <div>
       <Nav />
       <main>
-        {/* HERO */}
-        <section data-hero className="relative isolate flex min-h-[100svh] items-center justify-center overflow-hidden px-5 text-center">
-          <div className="text-field pointer-events-none absolute inset-0 z-0" aria-hidden="true" />
-          <TextLensBackground anchorSelector="[data-hero-content]" className="z-[1]" />
-          <div className="hero-vignette pointer-events-none absolute inset-0 z-[2]" aria-hidden="true" />
-          <div data-hero-content className="relative z-10 mx-auto max-w-3xl pt-16">
-            <span data-hero-pill className="chip mb-7 !bg-ink/60 backdrop-blur"><i className="h-2 w-2 rounded-full bg-mint" /> On Robinhood Chain</span>
-            <div data-hero-copy>
-              <h1 className="h-display text-[clamp(3rem,9vw,6.5rem)]">
-                <span className="block overflow-hidden pb-[0.08em]"><span data-line className="block">Your DeFi banker.</span></span>
-                <span className="block overflow-hidden pb-[0.08em]"><span data-line className="grad block">Every move checked.</span></span>
-              </h1>
-              <p data-hero-fade className="mx-auto mt-6 max-w-xl text-pretty text-[15px] leading-relaxed text-white/65 [text-shadow:0_0_24px_#06041a]">
-                Tell Vetto what you want in plain words. He finds real routes, inspects the risks, and waits for your signature before anything moves.
-              </p>
-              <div data-hero-fade className="mt-8 flex items-center justify-center gap-3">
-                <Link href="/app" className="btn btn-primary">Launch app <IconArrow className="h-4 w-4" /></Link>
-                <a href="#meet" className="btn btn-ghost bg-ink/60 backdrop-blur">See what he does</a>
+        {/* HERO + MEET: one pinned stage, choreographed by scroll */}
+        <div ref={wrap} className="relative" style={{ height: `${STAGE_VH}svh` }}>
+          <div className="sticky top-0 isolate h-[100svh] overflow-hidden">
+            <TextLensBackground control={lens} className="z-0" />
+            <div data-glow className="stage-glow pointer-events-none absolute inset-0 z-[1]" aria-hidden="true" />
+            <div className="stage-vignette pointer-events-none absolute inset-0 z-[2]" aria-hidden="true" />
+
+            {/* Vetto (z below the copy, above the grid) */}
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[3] flex justify-center">
+              <div data-char className="opacity-0 will-change-transform">
+                <Banker pose="idle" fade={false} className="h-[78svh] w-auto max-w-none lg:h-[84svh]" />
+              </div>
+            </div>
+
+            {/* HERO copy */}
+            <div className="absolute inset-0 z-10 flex items-center justify-center px-5 text-center">
+              <div data-hero-content className="mx-auto max-w-4xl pt-16">
+                <div data-hero-copy>
+                  <span data-hero-pill className="chip mb-7 !bg-ink/60 backdrop-blur"><i className="h-2 w-2 rounded-full bg-mint" /> On Robinhood Chain</span>
+                  <h1 className="h-display text-[clamp(2.8rem,6.6vw,5.5rem)]">
+                    <span className="block overflow-hidden pb-[0.08em]"><span data-line className="block">Your DeFi banker.</span></span>
+                    <span className="block overflow-hidden pb-[0.08em]"><span data-line className="grad block">Every move checked.</span></span>
+                  </h1>
+                  <p data-hero-fade className="mx-auto mt-6 max-w-xl text-pretty text-[15px] leading-relaxed text-white/65 [text-shadow:0_0_24px_#06041a]">
+                    Tell Vetto what you want in plain words. He finds real routes, inspects the risks, and waits for your signature before anything moves.
+                  </p>
+                  <div data-hero-fade className="mt-8 flex items-center justify-center gap-3">
+                    <Link href="/app" className="btn btn-primary">Launch app <IconArrow className="h-4 w-4" /></Link>
+                    <a href="#meet" className="btn btn-ghost bg-ink/60 backdrop-blur">See what he does</a>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div data-hero-scroll className="pointer-events-none absolute inset-x-0 bottom-5 z-10 flex flex-col items-center gap-2 text-[11px] text-white/40" aria-hidden>
+              <span className="fade-up flex flex-col items-center gap-2">Scroll<span className="scroll-line" /></span>
+            </div>
+
+            {/* MEET copy (left column on desktop, top on mobile) */}
+            <div data-meet-copy className="pointer-events-none absolute inset-0 z-10 mx-auto flex max-w-6xl items-start px-5 pt-24 lg:items-center lg:pt-10">
+              <div className="pointer-events-auto w-full lg:w-1/2">
+                <p data-meet-item className="mb-4 text-sm text-lilac">Meet Vetto</p>
+                <h2 data-meet-item className="h-display text-[2.6rem] sm:text-5xl md:text-6xl">Say it plainly.<br /><span className="grad">He reads the fine print.</span></h2>
+                <p data-meet-item className="mt-5 max-w-md text-white/60">Swap at a fair rate, inspect a dApp before you connect, or hand off a task. He shows his reading of your request first, so there are no surprises.</p>
+                <ul data-meet-item className="mt-6 flex flex-wrap gap-2">
+                  {CHIPS.map((c) => (<li key={c}><Link href={`/app?ask=${encodeURIComponent(c)}`} className="chip backdrop-blur"><i className="h-1.5 w-1.5 rounded-full bg-lilac" />{c}</Link></li>))}
+                </ul>
               </div>
             </div>
           </div>
-          <span className="absolute bottom-6 z-10 text-[11px] text-white/35" aria-hidden>Scroll</span>
-        </section>
+          {/* anchor for the "See what he does" button: where the meet scene has fully settled */}
+          <span id="meet" aria-hidden className="pointer-events-none absolute left-0 h-px w-px" style={{ top: "295svh" }} />
+        </div>
 
-        {/* MEET */}
-        <section id="meet" className="relative isolate mx-auto grid min-h-[110svh] max-w-6xl items-end gap-6 overflow-hidden px-5 pt-32 lg:grid-cols-2 lg:items-center">
-          <div className="meet-background pointer-events-none absolute inset-y-0 left-1/2 z-0 w-screen -translate-x-1/2" aria-hidden="true">
-            <div className="text-field absolute inset-0" />
-            <div className="hero-vignette meet-vignette absolute inset-0" />
-          </div>
-          <div data-meet-copy className="relative z-10 pb-10 lg:pb-0">
-            <p className="mb-4 text-sm text-lilac">Meet Vetto</p>
-            <h2 className="h-display text-5xl md:text-6xl">Say it plainly.<br /><span className="grad">He reads the fine print.</span></h2>
-            <p className="mt-5 max-w-md text-white/60">Swap at a fair rate, inspect a dApp before you connect, or hand off a task. He shows his reading of your request first, so there are no surprises.</p>
-            <ul className="mt-6 flex flex-wrap gap-2">
-              {CHIPS.map((c) => (<li key={c}><Link href={`/app?ask=${encodeURIComponent(c)}`} className="chip"><i className="h-1.5 w-1.5 rounded-full bg-lilac" />{c}</Link></li>))}
-            </ul>
-          </div>
-          <div data-rise className="relative z-10 mx-auto -mb-6 w-full max-w-[460px] lg:mb-0"><Banker pose="wave" className="h-auto w-full" /></div>
-        </section>
-
+        {/* below the stage: normal flow */}
         <Showcase />
         <Security />
         <Status />

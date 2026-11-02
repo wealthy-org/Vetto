@@ -6,6 +6,7 @@ import {
   verifyChain,
   verifyV4Pool,
   UNISWAP_V4_POOL_MANAGER,
+  UNISWAP_V4_QUOTER,
   UNISWAP_V4_STATE_VIEW,
 } from "./verify-chain.mjs";
 
@@ -21,7 +22,16 @@ function encodedString(value) {
   return `0x${(32n).toString(16).padStart(64, "0")}${BigInt(bytes.length / 2).toString(16).padStart(64, "0")}${bytes.padEnd(Math.ceil(bytes.length / 64) * 64, "0")}`;
 }
 
-function mockFetch({ chainId = "0x1237", primaryBlock = "0x100", secondaryBlock = "0x102", mismatchedCode = false, symbol = "USDG", decimals = "0x6" } = {}) {
+function mockFetch({
+  chainId = "0x1237",
+  primaryBlock = "0x100",
+  secondaryBlock = "0x102",
+  mismatchedCode = false,
+  mismatchedQuoterCode = false,
+  quoterCode = "0x6002",
+  symbol = "USDG",
+  decimals = "0x6",
+} = {}) {
   return async (url, init) => {
     const host = new URL(url).host;
     const providerIndex = host.endsWith("8545") ? 0 : 1;
@@ -37,7 +47,9 @@ function mockFetch({ chainId = "0x1237", primaryBlock = "0x100", secondaryBlock 
       case "eth_getCode":
         result = params[0].toLowerCase() === UNISWAP_V4_POOL_MANAGER.toLowerCase()
           ? providerIndex === 1 && mismatchedCode ? "0x6002" : "0x6001"
-          : "0x6003";
+          : params[0].toLowerCase() === UNISWAP_V4_QUOTER.toLowerCase()
+            ? providerIndex === 1 && mismatchedQuoterCode ? "0x6004" : quoterCode
+            : "0x6003";
         break;
       case "eth_call":
         result = params[0].data === "0x95d89b41" ? encodedString(symbol) : decimals;
@@ -55,6 +67,7 @@ test("validates chain, USDG metadata, and contract bytecode at a shared block", 
   assert.equal(report.commonBlock, "256");
   assert.equal(report.usdg.symbol, "USDG");
   assert.equal(report.usdg.decimals, 6);
+  assert.equal(report.quoter, UNISWAP_V4_QUOTER);
   assert.equal(report.providers.length, 2);
 });
 
@@ -68,6 +81,17 @@ test("rejects an RPC on the wrong chain", async () => {
 test("rejects providers with different contract code", async () => {
   await assert.rejects(
     verifyChain({ ...ENV, fetchImpl: mockFetch({ mismatchedCode: true }) }),
+    /disagree on contract bytecode/,
+  );
+});
+
+test("requires matching deployed Quoter bytecode on both providers", async () => {
+  await assert.rejects(
+    verifyChain({ ...ENV, fetchImpl: mockFetch({ quoterCode: "0x" }) }),
+    /no Uniswap v4 Quoter bytecode/,
+  );
+  await assert.rejects(
+    verifyChain({ ...ENV, fetchImpl: mockFetch({ mismatchedQuoterCode: true }) }),
     /disagree on contract bytecode/,
   );
 });

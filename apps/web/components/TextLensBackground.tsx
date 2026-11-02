@@ -1,11 +1,18 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type MutableRefObject } from "react";
+
+/** Driven from the scroll timeline in Landing: fade 0 = full lens, 1 = flat grid. */
+export type LensControl = { fade: number; kick: () => void };
 
 type Props = {
   word?: string;
-  anchorSelector?: string;
+  control?: MutableRefObject<LensControl>;
   className?: string;
+  /** Play the zoom-in on mount (hero). Off for sections whose lens is driven only by scroll. */
+  intro?: boolean;
+  /** Vertical position of the lens centre, as a fraction of the canvas height. */
+  anchorY?: number;
 };
 
 const VERTEX_SHADER = `
@@ -19,6 +26,8 @@ precision highp float;
 uniform sampler2D uTex;
 uniform vec2 uRes;
 uniform vec2 uCenter;
+uniform vec2 uPan;
+uniform float uMargin;
 uniform float uDpr;
 uniform float uR;
 uniform float uS;
@@ -27,6 +36,7 @@ uniform float uW1;
 uniform float uMu;
 uniform float uW2;
 uniform float uP;
+uniform float uWarm;
 
 const float SQ = 0.88622692545;
 
@@ -55,7 +65,9 @@ float sampleAlpha(vec2 p) {
   float rho = rhoOf(p);
   float k = rho < 0.0001 ? (1.0 - uA) : sRad(rho) / rho;
   vec2 src = uCenter + d * k;
-  return texture2D(uTex, src / uRes).a;
+  // The whole grid is panned by uPan (cursor parallax); the texture carries a margin so edges never show.
+  src -= uPan;
+  return texture2D(uTex, (src + vec2(uMargin)) / (uRes + vec2(2.0 * uMargin))).a;
 }
 
 void main() {
@@ -69,25 +81,20 @@ void main() {
   a *= 0.25;
 
   float rho = rhoOf(p);
-  float warm = clamp((0.75 - rho) / 0.5, 0.0, 1.0);
+  float warm = clamp((0.75 - rho) / 0.5, 0.0, 1.0) * uWarm;
   vec3 col = mix(vec3(0.69, 0.63, 0.92), vec3(0.93, 0.69, 0.63), warm);
-  float alpha = (0.34 + 0.2 * warm) * a;
+  float alpha = (0.3 + 0.24 * warm) * a;
 
   gl_FragColor = vec4(col * alpha, alpha);
 }
 `;
 
-function compileShader(
-  gl: WebGLRenderingContext,
-  type: number,
-  source: string,
-): WebGLShader | null {
+function compileShader(gl: WebGLRenderingContext, type: number, source: string): WebGLShader | null {
   const shader = gl.createShader(type);
   if (!shader) {
     console.error("TextLensBackground: unable to create WebGL shader.");
     return null;
   }
-
   gl.shaderSource(shader, source);
   gl.compileShader(shader);
   if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
@@ -98,18 +105,14 @@ function compileShader(
   return shader;
 }
 
-export function TextLensBackground({ word = "vetto", anchorSelector, className = "" }: Props) {
+export function TextLensBackground({ word = "vetto", control, className = "", intro = true, anchorY = 0.5 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const gl = canvas.getContext("webgl", {
-      premultipliedAlpha: true,
-      antialias: false,
-      alpha: true,
-    });
+    const gl = canvas.getContext("webgl", { premultipliedAlpha: true, antialias: false, alpha: true });
     if (!gl) {
       console.error("TextLensBackground: WebGL is not available in this browser.");
       return;
@@ -153,11 +156,7 @@ export function TextLensBackground({ word = "vetto", anchorSelector, className =
     }
 
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-    gl.bufferData(
-      gl.ARRAY_BUFFER,
-      new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]),
-      gl.STATIC_DRAW,
-    );
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
     const position = gl.getAttribLocation(program, "aPos");
     gl.enableVertexAttribArray(position);
     gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0);
@@ -166,6 +165,8 @@ export function TextLensBackground({ word = "vetto", anchorSelector, className =
     const uniforms = {
       res: uniform("uRes"),
       center: uniform("uCenter"),
+      pan: uniform("uPan"),
+      margin: uniform("uMargin"),
       dpr: uniform("uDpr"),
       radius: uniform("uR"),
       stretch: uniform("uS"),
@@ -174,6 +175,7 @@ export function TextLensBackground({ word = "vetto", anchorSelector, className =
       mu: uniform("uMu"),
       width2: uniform("uW2"),
       p: uniform("uP"),
+      warm: uniform("uWarm"),
     };
 
     gl.bindTexture(gl.TEXTURE_2D, texture);
@@ -182,60 +184,45 @@ export function TextLensBackground({ word = "vetto", anchorSelector, className =
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
-    const A = 0.66;
+    const A = 0.66; // lens strength at full zoom
     const W1 = 0.85;
     const MU = 1;
     const W2 = 0.12;
     const STRETCH = 1.17;
-    const INTRO_DURATION = 1400;
-    const MIN_SCROLL_SCALE = 0.58;
-    const ANCHOR_Y_OFFSET = -16;
+    const INTRO_DURATION = 2000; // lens zooms in from flat grid on page load
+    const MARGIN = 140; // extra grid around the viewport so cursor panning never shows an edge
+    const PAN_X = 34; // how far the whole grid drifts with the cursor
+    const PAN_Y = 24;
+    const LENS_FOLLOW = 1.7; // the lens drifts a little further than the grid, so it feels pulled by the cursor
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const anchor = { x: 0, y: 0 };
+
     const target = { x: 0, y: 0 };
-    const current = { x: 0, y: 0 };
-    const section = canvas.closest("section");
-    let amount = reducedMotion ? A : 0.02;
-    let introProgress = reducedMotion ? 1 : 0;
+    const pan = { x: 0, y: 0 };
+    let amountNow = reducedMotion || !intro ? A : 0.02;
     let introStartedAt = performance.now();
-    let scrollScale = 1;
-    let targetScrollScale = 1;
+    let introDone = reducedMotion || !intro;
     let width = 0;
     let height = 0;
     let dpr = 1;
     let raf = 0;
     let active = true;
 
-    const measureAnchor = () => {
-      const bounds = canvas.getBoundingClientRect();
-      const host = canvas.closest("section");
-      const element = anchorSelector && host
-        ? host.querySelector<HTMLElement>(anchorSelector)
-        : null;
-
-      if (element) {
-        const elementBounds = element.getBoundingClientRect();
-        anchor.x = elementBounds.left - bounds.left + elementBounds.width / 2;
-        anchor.y = elementBounds.top - bounds.top + elementBounds.height / 2 + ANCHOR_Y_OFFSET;
-      } else {
-        anchor.x = width / 2;
-        anchor.y = height / 2;
-      }
-    };
+    const fadeNow = () => Math.min(1, Math.max(0, control?.current.fade ?? 0));
 
     const buildTexture = () => {
       let scale = Math.min(2.5, Math.max(1.5, dpr * 1.25));
-      while (width * scale > 4096 || height * scale > 4096) scale *= 0.9;
+      while ((width + MARGIN * 2) * scale > 4096 || (height + MARGIN * 2) * scale > 4096) scale *= 0.9;
 
       const textureCanvas = document.createElement("canvas");
-      textureCanvas.width = Math.round(width * scale);
-      textureCanvas.height = Math.round(height * scale);
+      textureCanvas.width = Math.round((width + MARGIN * 2) * scale);
+      textureCanvas.height = Math.round((height + MARGIN * 2) * scale);
       const context = textureCanvas.getContext("2d");
       if (!context) {
         console.error("TextLensBackground: unable to create the text texture.");
         return;
       }
       context.scale(scale, scale);
+      context.translate(MARGIN, MARGIN);
       context.fillStyle = "#fff";
       context.textBaseline = "alphabetic";
       context.font = `600 ${width < 768 ? 14 : 18}px ${getComputedStyle(document.body).fontFamily}`;
@@ -245,10 +232,11 @@ export function TextLensBackground({ word = "vetto", anchorSelector, className =
       const gap = small ? 7 : 8;
       const wordWidth = context.measureText(word).width;
       const pitchX = wordWidth + gap;
-      const startX = ((((anchor.x - wordWidth / 2) % pitchX) + pitchX) % pitchX) - pitchX;
+      // Words are aligned so one sits exactly in the middle of the lens.
+      const startX = ((((width / 2 - wordWidth / 2) % pitchX) + pitchX) % pitchX) - pitchX - MARGIN;
 
-      for (let y = pitchY; y < height + pitchY; y += pitchY) {
-        for (let x = startX; x < width + pitchX; x += pitchX) {
+      for (let y = pitchY - MARGIN; y < height + MARGIN + pitchY; y += pitchY) {
+        for (let x = startX; x < width + MARGIN + pitchX; x += pitchX) {
           context.fillText(word, x, y);
         }
       }
@@ -260,15 +248,19 @@ export function TextLensBackground({ word = "vetto", anchorSelector, className =
     };
 
     const draw = () => {
+      const fade = fadeNow();
+      const amount = amountNow * (1 - fade);
       const rx = Math.max(0.21 * width, Math.min(0.46 * width, 0.39 * height * STRETCH));
-      const radius = Math.min(rx / STRETCH, 0.39 * height) * scrollScale;
+      const radius = Math.min(rx / STRETCH, 0.39 * height) * (1 - 0.18 * fade);
       const p = (amount * W1) / (W2 * (1 + erf(MU / W2)));
 
       gl.viewport(0, 0, canvas.width, canvas.height);
       gl.clearColor(0, 0, 0, 0);
       gl.clear(gl.COLOR_BUFFER_BIT);
       gl.uniform2f(uniforms.res, width, height);
-      gl.uniform2f(uniforms.center, anchor.x + current.x, anchor.y + current.y);
+      gl.uniform2f(uniforms.center, width / 2 + pan.x * LENS_FOLLOW, height * anchorY - 16 + pan.y * LENS_FOLLOW);
+      gl.uniform2f(uniforms.pan, pan.x, pan.y);
+      gl.uniform1f(uniforms.margin, MARGIN);
       gl.uniform1f(uniforms.dpr, dpr);
       gl.uniform1f(uniforms.radius, radius);
       gl.uniform1f(uniforms.stretch, STRETCH);
@@ -277,34 +269,37 @@ export function TextLensBackground({ word = "vetto", anchorSelector, className =
       gl.uniform1f(uniforms.mu, MU);
       gl.uniform1f(uniforms.width2, W2);
       gl.uniform1f(uniforms.p, p);
+      gl.uniform1f(uniforms.warm, 1 - fade);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     };
 
+    let lastFade = -1;
     const tick = (now: number) => {
-      const progress = Math.min(1, (now - introStartedAt) / INTRO_DURATION);
-      introProgress = progress;
-      const easedProgress = 1 - (1 - progress) ** 3;
-      amount = reducedMotion ? A : 0.02 + (A - 0.02) * easedProgress;
-      current.x += (target.x - current.x) * 0.08;
-      current.y += (target.y - current.y) * 0.08;
-      scrollScale += (targetScrollScale - scrollScale) * 0.12;
+      if (!introDone) {
+        const progress = Math.min(1, (now - introStartedAt) / INTRO_DURATION);
+        const eased = 1 - (1 - progress) ** 3;
+        amountNow = 0.02 + (A - 0.02) * eased;
+        if (progress >= 1) introDone = true;
+      }
+      pan.x += (target.x - pan.x) * 0.06;
+      pan.y += (target.y - pan.y) * 0.06;
       draw();
+      lastFade = fadeNow();
 
       const moving =
-        introProgress < 1 ||
-        Math.abs(target.x - current.x) > 0.05 ||
-        Math.abs(target.y - current.y) > 0.05 ||
-        Math.abs(targetScrollScale - scrollScale) > 0.001;
+        !introDone ||
+        Math.abs(target.x - pan.x) > 0.04 ||
+        Math.abs(target.y - pan.y) > 0.04;
       raf = moving ? requestAnimationFrame(tick) : 0;
     };
 
     const kick = () => {
       if (!raf) raf = requestAnimationFrame(tick);
     };
+    if (control) control.current.kick = () => { if (active && Math.abs(fadeNow() - lastFade) > 0.0005) kick(); };
 
     const relayout = () => {
       if (!active) return;
-      measureAnchor();
       buildTexture();
       draw();
     };
@@ -320,9 +315,11 @@ export function TextLensBackground({ word = "vetto", anchorSelector, className =
     };
 
     const onPointerMove = (event: PointerEvent) => {
-      if (reducedMotion || event.pointerType === "touch") return;
-      target.x = (event.clientX / window.innerWidth - 0.5) * -22;
-      target.y = (event.clientY / window.innerHeight - 0.5) * -18;
+      if (event.pointerType === "touch") return;
+      const nx = (event.clientX / window.innerWidth - 0.5) * 2;
+      const ny = (event.clientY / window.innerHeight - 0.5) * 2;
+      target.x = -nx * PAN_X;
+      target.y = -ny * PAN_Y;
       kick();
     };
 
@@ -332,27 +329,14 @@ export function TextLensBackground({ word = "vetto", anchorSelector, className =
       kick();
     };
 
-    const onScroll = () => {
-      const bounds = section?.getBoundingClientRect();
-      const progress = bounds
-        ? Math.min(1, Math.max(0, -bounds.top / (bounds.height * 0.72)))
-        : 0;
-      targetScrollScale = 1 - progress * (1 - MIN_SCROLL_SCALE);
-      if (reducedMotion) {
-        scrollScale = targetScrollScale;
-        draw();
-      } else {
-        kick();
-      }
-    };
-
     resize();
-    onScroll();
-    if (!reducedMotion) kick();
+    if (!reducedMotion && intro) {
+      introStartedAt = performance.now();
+      kick();
+    }
     document.fonts?.ready.then(relayout);
     const observer = new ResizeObserver(resize);
     observer.observe(canvas);
-    window.addEventListener("scroll", onScroll, { passive: true });
     if (!reducedMotion) {
       window.addEventListener("pointermove", onPointerMove, { passive: true });
       document.documentElement.addEventListener("pointerleave", onPointerLeave);
@@ -362,16 +346,16 @@ export function TextLensBackground({ word = "vetto", anchorSelector, className =
       active = false;
       cancelAnimationFrame(raf);
       observer.disconnect();
-      window.removeEventListener("scroll", onScroll);
       window.removeEventListener("pointermove", onPointerMove);
       document.documentElement.removeEventListener("pointerleave", onPointerLeave);
+      if (control) control.current.kick = () => {};
       gl.deleteTexture(texture);
       gl.deleteBuffer(buffer);
       gl.deleteProgram(program);
     };
-  }, [word, anchorSelector]);
+  }, [word, control, intro, anchorY]);
 
-  return <canvas ref={canvasRef} data-hero-lens className={`absolute inset-0 z-0 h-full w-full ${className}`} aria-hidden="true" />;
+  return <canvas ref={canvasRef} data-hero-lens className={`absolute inset-0 h-full w-full ${className}`} aria-hidden="true" />;
 }
 
 function erf(x: number) {

@@ -25,17 +25,19 @@ Before enabling any chain integration, configure two independently operated RPC 
 
 ```powershell
 $env:ROBINHOOD_RPC_URL_PRIMARY = ""
-$env:ROBINHOOD_RPC_URL_SECONDARY = ""
+$env:ROBINHOOD_RPC_URL_SECONDARY = "https://robinhood-mainnet.g.alchemy.com/v2/YOUR_ALCHEMY_API_KEY"
 $env:ROBINHOOD_USDG_ADDRESS = ""
 pnpm verify:chain
 ```
 
-The checker validates chain ID 4663 on both RPCs, compares the Uniswap v4 PoolManager (listed in the [official Uniswap deployment feed](https://developers.uniswap.org/deployments.json)) and configured USDG contract bytecode at a common block, and checks that USDG reports symbol `USDG` with 6 decimals. It is read-only; a passing result does not establish pool liquidity, executable quotes, or transaction safety. Keep the integration matrix `planned` until the remaining Phase 0 evidence and sign-off are complete.
+Robinhood Chain's official developer site lists Alchemy as a recommended RPC provider. Create an Alchemy app for **Robinhood Mainnet** and use its HTTPS URL as the secondary endpoint; keep the API key in your local PowerShell session, not in this README, chat, or a committed file. The free tier documents a maximum `eth_getLogs` range of 10 blocks for Robinhood Mainnet, so set `$env:ROBINHOOD_POOL_SCAN_CHUNK_SIZE = "10"` when using it. See [Alchemy's Robinhood RPC details](https://www.alchemy.com/rpc/robinhood) and [`eth_getLogs` range limits](https://www.alchemy.com/docs/chains/ethereum/ethereum-api-endpoints/eth-get-logs).
+
+The checker validates chain ID 4663 on both RPCs, compares the Uniswap v4 PoolManager and V4Quoter (listed in the [official Uniswap deployment feed](https://developers.uniswap.org/deployments.json)) and configured USDG contract bytecode at a common block, and checks that USDG reports symbol `USDG` with 6 decimals. Matching code and metadata do not establish USDG ownership or official status. It is read-only; a passing result does not establish pool liquidity, executable quotes, or transaction safety. Keep the integration matrix `planned` until the remaining Phase 0 evidence and sign-off are complete.
 
 ### Discover Uniswap v4 ETH/USDG pools
 
 Find the PoolManager deployment block from the [Blockscout contract page](https://robinhoodchain.blockscout.com/address/0x8366a39CC670B4001A1121B8F6A443A643e40951), set it as a trusted starting block, then scan a bounded range. The scan is limited to 250,000 blocks per run; if the deployment is older than that, set an end block and run consecutive ranges. A scan only establishes results for the printed block range.
-Set `ROBINHOOD_POOL_SCAN_CHUNK_SIZE` to a provider's maximum `eth_getLogs` range when needed. Smaller chunks increase the number of RPC requests; keep test ranges small before attempting a larger scan.
+Set `ROBINHOOD_POOL_SCAN_CHUNK_SIZE` to the provider's maximum `eth_getLogs` range. For Alchemy's free Robinhood Mainnet tier, use `10`; smaller chunks increase the number of RPC requests. Keep test ranges small before attempting a larger scan.
 
 ```powershell
 $env:ROBINHOOD_POOL_SCAN_FROM_BLOCK = "9070"

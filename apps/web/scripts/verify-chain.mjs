@@ -11,6 +11,8 @@ import {
 export const ROBINHOOD_CHAIN_ID = 4663n;
 // Listed in Uniswap's public deployment feed: https://developers.uniswap.org/deployments.json
 export const UNISWAP_V4_POOL_MANAGER = "0x8366a39CC670B4001A1121B8F6A443A643e40951";
+// Listed in Uniswap's public deployment feed for Robinhood Chain.
+export const UNISWAP_V4_QUOTER = "0x8dc178efb8111bb0973dd9d722ebeff267c98f94";
 // Published in Uniswap/v4-periphery test/ReservesLens.fork.t.sol.
 export const UNISWAP_V4_STATE_VIEW = "0xF3334192D15450CdD385c8B70e03f9A6bD9E673b";
 const POOLS_SLOT = 6n;
@@ -151,14 +153,18 @@ export async function verifyChain({
   const commonBlockTag = `0x${commonBlock.toString(16)}`;
 
   const snapshots = await Promise.all(heads.map(async (provider) => {
-    const [managerCode, tokenCode, symbolRaw, decimalsRaw] = await Promise.all([
+    const [managerCode, quoterCode, tokenCode, symbolRaw, decimalsRaw] = await Promise.all([
       rpcCall(provider.url, "eth_getCode", [UNISWAP_V4_POOL_MANAGER, commonBlockTag], fetchImpl),
+      rpcCall(provider.url, "eth_getCode", [UNISWAP_V4_QUOTER, commonBlockTag], fetchImpl),
       rpcCall(provider.url, "eth_getCode", [tokenAddress, commonBlockTag], fetchImpl),
       rpcCall(provider.url, "eth_call", [{ to: tokenAddress, data: "0x95d89b41" }, commonBlockTag], fetchImpl),
       rpcCall(provider.url, "eth_call", [{ to: tokenAddress, data: "0x313ce567" }, commonBlockTag], fetchImpl),
     ]);
     if (typeof managerCode !== "string" || !/^0x[0-9a-f]*$/i.test(managerCode) || managerCode.toLowerCase() === "0x") {
       throw new Error(`${provider.name} RPC has no PoolManager bytecode at block ${commonBlock}.`);
+    }
+    if (typeof quoterCode !== "string" || !/^0x[0-9a-f]*$/i.test(quoterCode) || quoterCode.toLowerCase() === "0x") {
+      throw new Error(`${provider.name} RPC has no Uniswap v4 Quoter bytecode at block ${commonBlock}.`);
     }
     if (typeof tokenCode !== "string" || !/^0x[0-9a-f]*$/i.test(tokenCode) || tokenCode.toLowerCase() === "0x") {
       throw new Error(`${provider.name} RPC has no USDG contract bytecode at block ${commonBlock}.`);
@@ -168,10 +174,18 @@ export async function verifyChain({
     if (symbol !== USDG_SYMBOL || decimals !== USDG_DECIMALS) {
       throw new Error(`${provider.name} RPC token metadata mismatch: expected ${USDG_SYMBOL} with ${USDG_DECIMALS} decimals.`);
     }
-    return { managerCode: managerCode.toLowerCase(), tokenCode: tokenCode.toLowerCase(), symbol, decimals };
+    return {
+      managerCode: managerCode.toLowerCase(),
+      quoterCode: quoterCode.toLowerCase(),
+      tokenCode: tokenCode.toLowerCase(),
+      symbol,
+      decimals,
+    };
   }));
 
-  if (snapshots[0].managerCode !== snapshots[1].managerCode || snapshots[0].tokenCode !== snapshots[1].tokenCode) {
+  if (snapshots[0].managerCode !== snapshots[1].managerCode
+    || snapshots[0].quoterCode !== snapshots[1].quoterCode
+    || snapshots[0].tokenCode !== snapshots[1].tokenCode) {
     throw new Error(`RPCs disagree on contract bytecode at common block ${commonBlock}.`);
   }
 
@@ -184,8 +198,9 @@ export async function verifyChain({
       blockNumber: blockNumber.toString(),
     })),
     poolManager: UNISWAP_V4_POOL_MANAGER,
+    quoter: UNISWAP_V4_QUOTER,
     usdg: { address: tokenAddress, symbol: snapshots[0].symbol, decimals: Number(snapshots[0].decimals) },
-    note: "Read-only checks passed. This does not verify token ownership, pool liquidity, quote execution, or transaction safety.",
+    note: "Read-only checks passed. USDG metadata does not verify token ownership or official status; this does not verify pool liquidity, quote execution, or transaction safety.",
   };
 }
 
