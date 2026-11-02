@@ -4,7 +4,7 @@ import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { english } from "viem/accounts";
 import { findAsset } from "@vetto/asset-registry";
-import { formatUnits, parseIntent, type Intent, type ParseResult } from "@vetto/intent-parser";
+import { formatUnits, parseIntent, type Intent, type ParseContext, type ParseResult } from "@vetto/intent-parser";
 import { capabilityById, type QuoteResult } from "@vetto/quote-engine";
 import { detectSecret, secretMessage, type RiskReport } from "@vetto/safety-policy";
 import { Banker } from "./Banker";
@@ -118,7 +118,21 @@ export function ChatApp() {
   }, []);
 
   const lastUrl = useMemo(() => [...msgs].reverse().map((m) => (m.result ? urlOf(m.result.intent) : undefined)).find(Boolean), [msgs]);
-  const preview = useMemo(() => parseIntent(input, lastUrl ? { lastUrl } : {}), [input, lastUrl]);
+  const lastPair = useMemo(() => {
+    const previousSwap = [...msgs].reverse().find((m) => m.result?.intent.kind === "swap");
+    const intent = previousSwap?.result?.intent;
+    return intent?.kind === "swap" ? { tokenIn: intent.tokenIn, tokenOut: intent.tokenOut } : undefined;
+  }, [msgs]);
+  const pendingIntent = useMemo(() => {
+    const lastResponse = [...msgs].reverse().find((m) => m.role === "banker" && m.result);
+    return lastResponse?.result?.pendingIntent;
+  }, [msgs]);
+  const parseContext = useMemo<ParseContext>(() => ({
+    ...(lastUrl ? { lastUrl } : {}),
+    ...(lastPair ? { lastPair } : {}),
+    ...(pendingIntent ? { pendingIntent } : {}),
+  }), [lastUrl, lastPair, pendingIntent]);
+  const preview = useMemo(() => parseIntent(input, parseContext), [input, parseContext]);
   const typedSecret = useMemo(() => detectSecret(input, BIP39_WORDS), [input]);
   const history = useMemo(() => historyMode === "saved"
     ? savedHistory.map((item) => ({ id: item.id, prompt: item.prompt }))
@@ -215,10 +229,10 @@ export function ChatApp() {
     setBusy(true);
     const userMsgId = push({ role: "user", text });
     try {
-      const result = await post<ParseResult>("/api/intent", { text, context: lastUrl ? { lastUrl } : {} });
+      const result = await post<ParseResult>("/api/intent", { text, context: parseContext });
       const i = result.intent;
       void saveHistoryPrompt(text);
-      const id = push({ role: "banker", text: i.kind === "clarification" ? i.question : i.kind === "chat" ? "I can quote swaps, inspect links before you connect, and (soon) run capped burner tasks. What would you like?" : "Here’s how I read that.", result, ...(CAP_FOR[i.kind] ? { capId: CAP_FOR[i.kind]! } : {}) });
+      const id = push({ role: "banker", text: i.kind === "clarification" ? i.question : i.kind === "chat" ? result.warning ?? "I can quote swaps, inspect links before you connect, and (soon) run capped burner tasks. What would you like?" : "Here’s how I read that.", result, ...(CAP_FOR[i.kind] ? { capId: CAP_FOR[i.kind]! } : {}) });
       if (i.kind === "swap") patch(id, { quote: await post<QuoteResult>("/api/quotes", { intent: i }) });
       if (i.kind === "inspect") patch(id, { inspect: await post<InspectResponse>("/api/inspect", { url: i.url }) });
     } catch (e) {

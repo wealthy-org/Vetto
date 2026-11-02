@@ -16,10 +16,22 @@ export type Intent =
 export interface ParseResult {
   intent: Intent;
   label: string;
+  warning?: string;
+  pendingIntent?: PendingIntent;
+}
+
+export interface PendingIntent {
+  kind: "swap";
+  tokenIn: string;
+  amountIn: string;
+  privateRequested: boolean;
+  slippageBps?: number;
 }
 
 export interface ParseContext {
   lastUrl?: string;
+  lastPair?: { tokenIn: string; tokenOut: string };
+  pendingIntent?: PendingIntent;
 }
 
 /** Optional LLM adapter. Its output is untrusted data and goes through validateIntent(). */

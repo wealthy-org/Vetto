@@ -3,7 +3,7 @@
 Statuses: `verified` · `planned` · `unsupported` · `blocked`. Flip a row only with a passing integration test, a demo tx receipt, and an owner sign-off.
 The app and `GET /api/capabilities` read `packages/quote-engine/src/capabilities.ts`; keep them in sync.
 
-The functional backend currently supports typed intent previews and passive URL policy checks.
+The functional backend currently supports typed intent previews, an optional configured OpenAI-compatible intent parser with deterministic validation/fallback, and passive URL policy checks.
 It does not submit transactions, contact inspected sites, or claim any chain venue is live.
 
 | Capability | Status | Needed to verify | Owner |
@@ -20,7 +20,7 @@ It does not submit transactions, contact inspected sites, or claim any chain ven
 | Simulation provider | planned | Asset + allowance deltas on this chain | |
 | Isolated browser fleet | planned | Per-session microVM/container, egress filter, verified teardown | |
 | Burner signer | planned | Non-exportable / enclaved signer with spend ceiling, or wallet-controlled account | |
-| Typed intent API | verified | Deterministic parser and validation tests | |
+| Typed intent API | verified | Deterministic parser and validation tests; optional OpenAI-compatible parser is validated against the same asset registry and never grants execution authority | |
 | Passive link inspection API | verified | Static HTTPS/public-host checks and cautious punycode/one-character brand lookalike warnings; no request is sent to the destination and warnings do not prove malicious intent | |
 | Quote API | planned | Returns no routes until an executable adapter and asset addresses are verified | |
 | Transaction preparation | planned | Authenticated and idempotent API fails closed; enable unsigned payloads only after verified assets, route, simulation, and audit tests | |

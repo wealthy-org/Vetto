@@ -27,6 +27,22 @@ test("POST /api/intent: swap → typed intent + interpretation line", async () =
   assert.match(b.label, /Robinhood Chain/);
 });
 
+test("POST /api/intent parses a common Indonesian swap phrase without calling the LLM", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error("LLM must not be called for a supported deterministic phrase"); };
+  try {
+    const response = await intent(post("/api/intent", { text: "Tolong ubahkan 0.1 ETH saya jadi USDG" }));
+    const body = await j(response);
+    assert.equal(response.status, 200);
+    assert.equal(body.intent.kind, "swap");
+    assert.equal(body.intent.amountIn, "0.1");
+    assert.equal(body.intent.tokenIn, "ETH");
+    assert.equal(body.intent.tokenOut, "USDG");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("POST /api/intent: ambiguous → clarification, never guesses a token", async () => {
   const b = await j(await intent(post("/api/intent", { text: "swap 500 USDG" })));
   assert.equal(b.intent.kind, "clarification");
@@ -36,6 +52,101 @@ test("POST /api/intent: ambiguous → clarification, never guesses a token", asy
 test("follow-up uses context.lastUrl", async () => {
   const b = await j(await intent(post("/api/intent", { text: "open it live", context: { lastUrl: "https://demo-dex.app/" } })));
   assert.deepEqual(b.intent, { kind: "live-browser", action: "start", url: "https://demo-dex.app/" });
+});
+
+test("follow-up uses validated pending swap and last-pair context", async () => {
+  const pending = await j(await intent(post("/api/intent", {
+    text: "ETH",
+    context: { pendingIntent: { kind: "swap", tokenIn: "USDG", amountIn: "2", privateRequested: false } },
+  })));
+  assert.deepEqual(pending.intent, {
+    kind: "swap", chainId: 4663, tokenIn: "USDG", tokenOut: "ETH", amountIn: "2", privateRequested: false,
+  });
+
+  const pair = await j(await intent(post("/api/intent", {
+    text: "swap 3 USDG",
+    context: { lastPair: { tokenIn: "USDG", tokenOut: "ETH" } },
+  })));
+  assert.equal(pair.intent.kind, "swap");
+  assert.equal(pair.intent.tokenOut, "ETH");
+
+  const invalid = await j(await intent(post("/api/intent", {
+    text: "ETH",
+    context: { pendingIntent: { kind: "swap", tokenIn: "USDG", amountIn: "1.123456789", privateRequested: false } },
+  })));
+  assert.equal(invalid.intent.kind, "chat");
+});
+
+test("POST /api/intent uses optional OpenAI-compatible parser and validates its output", async () => {
+  const previous = {
+    key: process.env.LLM_API_KEY,
+    url: process.env.LLM_API_URL,
+    model: process.env.LLM_MODEL,
+  };
+  const originalFetch = globalThis.fetch;
+  process.env.LLM_API_KEY = "test-key";
+  process.env.LLM_API_URL = "https://llm.example/v1/chat/completions";
+  process.env.LLM_MODEL = "test-model";
+  globalThis.fetch = async (_input, _init) => Response.json({
+    choices: [{
+      message: {
+        content: JSON.stringify({
+          kind: "swap", chainId: 4663, tokenIn: "ETH", tokenOut: "USDG", amountIn: "0.5", privateRequested: false,
+        }),
+      },
+    }],
+  });
+  try {
+    const body = await j(await intent(post("/api/intent", {
+      text: "ubah eth saya ke USDG",
+      context: { lastUrl: "https://previous-site.example/" },
+    })));
+    assert.deepEqual(body.intent, {
+      kind: "swap", chainId: 4663, tokenIn: "ETH", tokenOut: "USDG", amountIn: "0.5", privateRequested: false,
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (previous.key === undefined) delete process.env.LLM_API_KEY;
+    else process.env.LLM_API_KEY = previous.key;
+    if (previous.url === undefined) delete process.env.LLM_API_URL;
+    else process.env.LLM_API_URL = previous.url;
+    if (previous.model === undefined) delete process.env.LLM_MODEL;
+    else process.env.LLM_MODEL = previous.model;
+  }
+});
+
+test("POST /api/intent reports a safe warning when the provider rejects the request", async () => {
+  const previous = {
+    key: process.env.LLM_API_KEY,
+    url: process.env.LLM_API_URL,
+    model: process.env.LLM_MODEL,
+  };
+  const originalFetch = globalThis.fetch;
+  process.env.LLM_API_KEY = "test-key";
+  process.env.LLM_API_URL = "https://llm.example/v1/chat/completions";
+  process.env.LLM_MODEL = "invalid-model";
+  const providerMessage = "Requested entity was not found.";
+  const originalWarn = console.warn;
+  const warnings: string[] = [];
+  console.warn = (...args: unknown[]) => warnings.push(args.join(" "));
+  globalThis.fetch = async () => Response.json({ error: { message: providerMessage } }, { status: 400 });
+  try {
+    const body = await j(await intent(post("/api/intent", { text: "ubah eth saya ke USDG" })));
+    assert.equal(body.intent.kind, "chat");
+    assert.match(body.warning, /HTTP 400.*LLM_MODEL/);
+    assert.doesNotMatch(body.warning, /Requested entity|test-key|invalid-model/);
+    assert.ok(warnings.some((warning) => warning.includes(`HTTP 400: ${providerMessage}`)));
+    assert.ok(warnings.every((warning) => !warning.includes("test-key")));
+  } finally {
+    globalThis.fetch = originalFetch;
+    console.warn = originalWarn;
+    if (previous.key === undefined) delete process.env.LLM_API_KEY;
+    else process.env.LLM_API_KEY = previous.key;
+    if (previous.url === undefined) delete process.env.LLM_API_URL;
+    else process.env.LLM_API_URL = previous.url;
+    if (previous.model === undefined) delete process.env.LLM_MODEL;
+    else process.env.LLM_MODEL = previous.model;
+  }
 });
 
 test("guard: cross-origin, missing origin, non-JSON, bad JSON, oversize, wrong shape", async () => {
