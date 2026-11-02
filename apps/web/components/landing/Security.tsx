@@ -151,32 +151,34 @@ export function HoldToConfirm() {
 
 
 function MoreCards() {
-  const [on, setOn] = useState(false);
   return (
       <div className="mt-16 grid gap-4 md:grid-cols-2">
         <div className="glass rounded-3xl p-6">
-          <h3 className="font-semibold">Replayed before you sign</h3>
-          <p className="mt-1 text-sm text-white/55">Every transaction is simulated on a copy of the chain, and the result is shown to you first.</p>
+          <div className="mb-2"><span className="status status-planned">Illustration · planned</span></div>
+          <h3 className="font-semibold">A transaction review, before you sign</h3>
+          <p className="mt-1 text-sm text-white/55">Simulation is not connected yet. These sample amounts show the review details Vetto must verify before any swap can be prepared.</p>
           <dl className="mt-4 space-y-2 rounded-2xl bg-white/[.03] p-4 text-sm">
             {[["You send", "2,500 USDG"], ["You receive", "≥ 0.7274 ETH"], ["Approval", "Exact, 2,500 USDG"]].map(([k, v]) => (<div key={k} className="flex justify-between"><dt className="text-white/50">{k}</dt><dd className="font-medium">{v}</dd></div>))}
           </dl>
         </div>
         <div className="glass relative overflow-hidden rounded-3xl p-6">
-          <h3 className="font-semibold">Your main wallet stays home</h3>
-          <p className="mt-1 text-sm text-white/55">Tasks use a burner you fund with a fixed amount. Worst case, you lose that amount.</p>
+          <div className="mb-2"><span className="status status-planned">Planned · not available</span></div>
+          <h3 className="font-semibold">A separate wallet for future tasks</h3>
+          <p className="mt-1 text-sm text-white/55">Burner-wallet tasks are not implemented. The diagram is illustrative; no wallet is created, funded, or used by this feature.</p>
           <div className="relative mt-5 h-28">
             <div className="absolute left-0 top-2 w-[58%] rounded-xl bg-gradient-to-br from-violet to-[#4a3aa8] p-3 text-xs shadow-lg"><div className="font-semibold">Main wallet</div><div className="font-mono opacity-70">0x57f0…365e</div><div className="mt-1 flex items-center gap-1 opacity-80"><IconLock className="h-3 w-3" /> Stays home</div></div>
             <div className="absolute right-0 top-9 w-[58%] rotate-[6deg] rounded-xl bg-gradient-to-br from-peach to-[#ff9a8a] p-3 text-xs text-ink shadow-lg"><div className="flex items-center gap-1 font-semibold"><IconKey className="h-3 w-3" /> Burner</div><div className="font-mono opacity-70">0x3b9d…e21c</div><div className="mt-1 opacity-80">Goes out · capped</div></div>
           </div>
         </div>
         <div className="glass rounded-3xl p-6">
-          <h3 className="font-semibold">Private is your call</h3>
-          <p className="mt-1 text-sm text-white/55">Off unless you say so, and only offered where a verified relay exists.</p>
-          <button type="button" role="switch" aria-checked={on} onClick={() => setOn((v) => !v)} className="mt-5 flex w-full items-center justify-between rounded-2xl border border-white/10 bg-white/[.04] px-4 py-3 text-sm font-medium">
+          <div className="mb-2"><span className="status status-unavailable">Unavailable</span></div>
+          <h3 className="font-semibold">Private submission</h3>
+          <p className="mt-1 text-sm text-white/55">No Robinhood Chain relay is verified, so Vetto cannot offer private submission.</p>
+          <button type="button" role="switch" aria-checked={false} disabled className="mt-5 flex w-full cursor-not-allowed items-center justify-between rounded-2xl border border-white/10 bg-white/[.04] px-4 py-3 text-sm font-medium opacity-60">
             Private submission
-            <span className={`relative h-6 w-11 rounded-full transition-colors ${on ? "bg-violet" : "bg-white/15"}`}><span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all ${on ? "left-[22px]" : "left-0.5"}`} /></span>
+            <span className="relative h-6 w-11 rounded-full bg-white/15"><span className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white" /></span>
           </button>
-          <p className="mt-3 min-h-[2.5rem] text-xs text-white/50">{on ? "Unavailable on this chain until a relay is verified. Your transaction would be public after confirmation anyway." : "Public submission. Visible on the explorer after confirmation."}</p>
+          <p className="mt-3 min-h-[2.5rem] text-xs text-white/50">This control is disabled. Normal onchain transactions are public after confirmation.</p>
         </div>
         <div className="glass rounded-3xl p-6"><h3 className="mb-1 font-semibold">You confirm</h3><p className="mb-5 text-sm text-white/55">Swaps, mints and claims all wait for you.</p><HoldToConfirm /></div>
       </div>
@@ -233,8 +235,8 @@ export function Security() {
           <div className="grid items-center gap-10 lg:grid-cols-[5fr_6fr]">
             <div>
               <p className="mb-3 text-sm text-lilac">Security</p>
-              <h2 className="h-display text-5xl md:text-6xl">Your wallet stays <span className="grad">out of it.</span></h2>
-              <p className="mt-5 max-w-md text-white/60">Every request goes through Vetto’s vault first. Anything that asks for more than the task needs is stopped there, and you get the reason.</p>
+              <h2 className="h-display text-5xl md:text-6xl">Your wallet stays <span className="grad">in your control.</span></h2>
+              <p className="mt-5 max-w-md text-white/60">This vault animation is an illustration, not a live transaction simulation. Vetto currently checks link policy and DNS; swap simulation and isolated dApp scanning are not available yet.</p>
               <div className="mt-8 flex max-w-sm items-start gap-3">
                 <span className="mt-1 block h-9 w-9 shrink-0 overflow-hidden rounded-full bg-[#3a2c88]/60"><Banker eyes={false} fade={false} viewBox="120 40 296 270" className="h-full w-full" /></span>
                 <div className="glass min-h-[64px] rounded-2xl rounded-tl-md px-4 py-3 text-[13px] leading-snug text-white/90" role="status" aria-live="polite"><span key={i} className="step-in block">{cur.say}</span></div>

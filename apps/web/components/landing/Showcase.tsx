@@ -11,21 +11,21 @@ import { IconArrow, IconBrowser, IconKey, IconLock, IconShield, IconSwap } from 
 import { SampleCheck, SampleLive, SamplePrivate, SampleRoute, SampleTask } from "./samples";
 
 const STEPS = [
-  { id: "swap", Icon: IconSwap, Card: SampleRoute, cap: "route-direct", pose: "clasp" as Pose, title: "Real routes, ranked by what you keep.",
-    body: "Say the trade in plain words. Vetto lists only routes that can actually execute and orders them by what lands in your wallet after fees.",
-    cmd: "swap 2500 USDG to ETH", say: "With live routes, the one that pays you the most sits on top. If only one exists, you see one." },
+  { id: "swap", Icon: IconSwap, Card: SampleRoute, cap: "route-direct", pose: "clasp" as Pose, title: "Real routes, when verified.",
+    body: "Live swap routes are not connected yet. This sample illustrates how Vetto will rank verified executable quotes by net output without inventing options.",
+    cmd: "swap 2500 USDG to ETH", say: "No verified route is connected yet, so I won't show a made-up price." },
   { id: "private", Icon: IconLock, Card: SamplePrivate, cap: "private-relay", pose: "think" as Pose, title: "Private, when it's truly possible.",
-    body: "Ask for private submission and the order skips the public mempool, but only through a relay verified for this chain. Otherwise the switch stays off and says why.",
+    body: "No Robinhood Chain private relay is verified, so Vetto does not offer private submission. Confirmed onchain transactions are public.",
     cmd: "swap 2 ETH to USDG privately", say: "No relay, no pretending. I'll tell you plainly instead of dressing up a public route." },
   { id: "check", Icon: IconShield, Card: SampleCheck, cap: "dapp-sandbox", pose: "idle" as Pose, title: "Inspected before you connect.",
-    body: "Paste a link. Vetto reads it on a sealed machine with a throwaway wallet and reports every approval and signature the site tries to get.",
-    cmd: "is fastclaim-hood.xyz safe?", say: "It wants every token you own, forever. I would not touch this one." },
+    body: "Vetto currently checks URL policy and DNS only; it does not visit the site. Isolated-browser scans and approval capture are planned.",
+    cmd: "is fastclaim-hood.xyz safe?", say: "This is sample data. Passive link checks cannot confirm what a site will do." },
   { id: "agent", Icon: IconKey, Card: SampleTask, cap: "agent-tasks", pose: "point" as Pose, title: "A capped burner does the clicking.",
-    body: "Hand over a mint or claim. It runs from a burner wallet you fund with a small, fixed budget. Your main wallet never visits the site.",
-    cmd: "mint the NFT at nft-mint-pass.app max 0.01 ETH", say: "Dry run first, then your explicit go. Worst case, you lose the burner's balance." },
+    body: "Burner-wallet mint and claim tasks are planned, not available. Any future task must use an explicit spend cap and a separate wallet.",
+    cmd: "mint the NFT at nft-mint-pass.app max 0.01 ETH", say: "I can't run mint or claim tasks yet. No wallet action was taken." },
   { id: "live", Icon: IconBrowser, Card: SampleLive, cap: "live-browser", pose: "live" as Pose, title: "Watch it work. Grab the controls.",
-    body: "Each task streams from an isolated machine. Watch read-only, take over at any point, and end the session with everything wiped.",
-    cmd: "open demo-dex.app live", say: "My screen is read-only until you ask for the controls." },
+    body: "Isolated live-browser sessions and user takeover are planned; Vetto does not currently open or stream third-party sites.",
+    cmd: "open demo-dex.app live", say: "Live browser sessions are not available yet. This panel is only an illustration." },
 ];
 const N = STEPS.length;
 const STEP_DEG = 360 / N;

@@ -132,7 +132,7 @@ export function Landing() {
                     <span className="block overflow-hidden pb-[0.08em]"><span data-line className="grad block">Every move checked.</span></span>
                   </h1>
                   <p data-hero-fade className="mx-auto mt-6 max-w-xl text-pretty text-[15px] leading-relaxed text-white/65 [text-shadow:0_0_24px_#06041a]">
-                    Tell Vetto what you want in plain words. He finds real routes, inspects the risks, and waits for your signature before anything moves.
+                    Ask in plain language. Vetto previews your intent and checks public links. Live swap routes, transaction simulation, and execution are not enabled yet.
                   </p>
                   <div data-hero-fade className="mt-8 flex items-center justify-center gap-3">
                     <Link href="/app" className="btn btn-primary">Launch app <IconArrow className="h-4 w-4" /></Link>
@@ -150,7 +150,7 @@ export function Landing() {
               <div className="pointer-events-auto w-full lg:w-1/2">
                 <p data-meet-item className="mb-4 text-sm text-lilac">Meet Vetto</p>
                 <h2 data-meet-item className="h-display text-[2.6rem] sm:text-5xl md:text-6xl">Say it plainly.<br /><span className="grad">He reads the fine print.</span></h2>
-                <p data-meet-item className="mt-5 max-w-md text-white/60">Swap at a fair rate, inspect a dApp before you connect, or hand off a task. He shows his reading of your request first, so there are no surprises.</p>
+                <p data-meet-item className="mt-5 max-w-md text-white/60">Preview a request or run a passive link check. Swap execution, isolated dApp scans, and burner tasks remain planned until their integrations are verified.</p>
                 <ul data-meet-item className="mt-6 flex flex-wrap gap-2">
                   {CHIPS.map((c) => (<li key={c}><Link href={`/app?ask=${encodeURIComponent(c)}`} className="chip backdrop-blur"><i className="h-1.5 w-1.5 rounded-full bg-lilac" />{c}</Link></li>))}
                 </ul>

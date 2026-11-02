@@ -32,7 +32,7 @@ pnpm verify:chain
 
 Robinhood Chain's official developer site lists Alchemy as a recommended RPC provider. Create an Alchemy app for **Robinhood Mainnet** and use its HTTPS URL as the secondary endpoint; keep the API key in your local PowerShell session, not in this README, chat, or a committed file. The free tier documents a maximum `eth_getLogs` range of 10 blocks for Robinhood Mainnet, so set `$env:ROBINHOOD_POOL_SCAN_CHUNK_SIZE = "10"` when using it. See [Alchemy's Robinhood RPC details](https://www.alchemy.com/rpc/robinhood) and [`eth_getLogs` range limits](https://www.alchemy.com/docs/chains/ethereum/ethereum-api-endpoints/eth-get-logs).
 
-The checker validates chain ID 4663 on both RPCs, compares the Uniswap v4 PoolManager and V4Quoter (listed in the [official Uniswap deployment feed](https://developers.uniswap.org/deployments.json)) and configured USDG contract bytecode at a common block, and checks that USDG reports symbol `USDG` with 6 decimals. Matching code and metadata do not establish USDG ownership or official status. It is read-only; a passing result does not establish pool liquidity, executable quotes, or transaction safety. Keep the integration matrix `planned` until the remaining Phase 0 evidence and sign-off are complete.
+The checker validates chain ID 4663 on both RPCs, compares the Uniswap v4 PoolManager (listed in the [official Uniswap deployment feed](https://developers.uniswap.org/deployments.json)) and configured USDG contract bytecode at a common block, and checks that USDG reports symbol `USDG` with 6 decimals. Uniswap's [Universal Router deployment file](https://github.com/Uniswap/universal-router/blob/edf19bfde87e6cf5b29046f6ca2f483a4ffd6ae6/deploy-addresses/robinhood.json) lists v2.1.1 at `0x8876789976decbfcbbbe364623c63652db8c0904`; Blockscout reports only a partial source match, so verify its runtime code before use. The v2.1.2 entry currently resolves to a `StubContract` on Blockscout. No Robinhood Chain V4Quoter is verified: the Quoter address previously checked here resolves to `StubContract.sol`, not a Quoter. Matching bytecode and token metadata do not establish USDG ownership or official status. This read-only check does not establish pool liquidity, executable quotes, or transaction safety. Keep quotes and execution disabled until a real quoting path, router, simulation, and controlled receipt test are verified.
 
 ### Discover Uniswap v4 ETH/USDG pools
 
@@ -69,9 +69,9 @@ The wallet signs a short-lived, single-use SIWE message on Ethereum Mainnet (cha
 Run `pnpm db:migrate` again to create the per-user chat history table. Only authenticated users' prompts are saved; preview mode stores prompts in the current tab only. Saved requests can be deleted individually or cleared from the app; deletion also removes their cached idempotency responses.
 
 ## Next steps (brief §20 order)
-1. Phase 0: verify RPC, token addresses, v4 pools. Then flip registry/capability statuses.
+1. Phase 0: verify RPC, token identity and v4 pools; separately identify and verify a Robinhood Chain-compatible Quoter and transaction router before enabling quotes or execution.
 2. Verify WalletConnect support for the target chain in deployment; the app advertises Ethereum Mainnet and Robinhood Chain to WalletConnect, while CSP allows only explicit WalletConnect hosts when configured.
-3. Direct-pool adapter in `apps/web/app/api/quotes/route.ts` `ADAPTERS`; simulation; wallet-signed execution + receipt.
+3. Implement the direct-pool adapter only after the router is verified; add transaction simulation, exact-approval checks, wallet-signed execution, and receipt/history integration.
 4. Move rate limiting/idempotency to Postgres; extract `apps/api` and `apps/worker` (pg-boss) before Phase 3.
 
 Vetto is independent and unaffiliated with Sotto Fi. Name not trademark-cleared.
