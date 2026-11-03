@@ -29,7 +29,7 @@ const ethAmountArg = process.argv[3] ?? "0.01";
 const usdgAmountArg = process.argv[4] ?? "20";
 
 if (!RPC) throw new Error("ROBINHOOD_RPC_URL_PRIMARY is missing.");
-if (!walletArg || !isAddress(walletArg)) {
+if (!walletArg || !isAddress(walletArg, { strict: false })) {
   throw new Error(
     "Usage: node --env-file=.env.local scripts/simulate-router-v4.mjs <wallet-address> [ETH amount] [USDG amount]",
   );
@@ -43,6 +43,58 @@ const account = getAddress(walletArg);
 const client = createPublicClient({
   transport: http(RPC, { timeout: 15_000, retryCount: 0 }),
 });
+
+const permit2ReadAbi = [
+  {
+    type: "function",
+    name: "allowance",
+    stateMutability: "view",
+    inputs: [
+      { name: "user", type: "address" },
+      { name: "token", type: "address" },
+      { name: "spender", type: "address" },
+    ],
+    outputs: [
+      { name: "amount", type: "uint160" },
+      { name: "expiration", type: "uint48" },
+      { name: "nonce", type: "uint48" },
+    ],
+  },
+];
+
+const erc20ReadAbi = [
+  {
+    type: "function",
+    name: "allowance",
+    stateMutability: "view",
+    inputs: [
+      { name: "owner", type: "address" },
+      { name: "spender", type: "address" },
+    ],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+];
+
+const tokenAllowance = await client.readContract({
+  address: USDG,
+  abi: erc20ReadAbi,
+  functionName: "allowance",
+  args: [account, "0x000000000022D473030F116dDEE9F6B43aC78BA3"],
+});
+
+const permitAllowance = await client.readContract({
+  address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+  abi: permit2ReadAbi,
+  functionName: "allowance",
+  args: [account, USDG, ROUTER],
+});
+
+console.log("\n=== USDG PERMIT2 STATUS ===");
+console.log("USDG allowance to Permit2:", tokenAllowance.toString());
+console.log("Permit2 allowance to Router:");
+console.log("Amount:", permitAllowance[0].toString());
+console.log("Expiration:", permitAllowance[1].toString());
+console.log("Nonce:", permitAllowance[2].toString());
 
 const poolKeyComponents = [
   { name: "currency0", type: "address" },
