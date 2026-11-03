@@ -80,3 +80,31 @@ test("capability registry is honest: no external capability is marked verified w
   const ext = CAPABILITIES.filter((c) => /^(route-|private-|wallet-|dapp-|agent-|live-)/.test(c.id));
   assert.ok(ext.length > 0 && ext.every((c) => c.status !== "verified"));
 });
+
+
+test("a timed-out adapter does not block quote collection", async () => {
+  const slow: QuoteAdapter = {
+    id: "slow",
+    status: "verified",
+    quote: async () =>
+      new Promise<RouteQuote[]>(() => {
+        // Simulates an adapter that ignores AbortSignal.
+      }),
+  };
+
+  const started = Date.now();
+
+  const result = await collectQuotes(
+    req,
+    [slow],
+    { timeoutMs: 30, now: NOW },
+  );
+
+  const elapsed = Date.now() - started;
+
+  assert.equal(result.routes.length, 0);
+  assert.deepEqual(result.skipped, [
+    { adapterId: "slow", reason: "failed or timed out" },
+  ]);
+  assert.ok(elapsed < 1000, `Collection took ${elapsed}ms`);
+});
