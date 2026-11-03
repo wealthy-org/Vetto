@@ -1,8 +1,6 @@
 
 import {
   createPublicClient,
-  encodeAbiParameters,
-  encodeFunctionData,
   formatUnits,
   getAddress,
   http,
@@ -11,6 +9,11 @@ import {
   parseUnits,
 } from "viem";
 
+import {
+  buildUniversalRouterV4Swap,
+  calculateMinOut,
+} from "./universal-router-v4.mjs";
+
 const RPC = process.env.ROBINHOOD_RPC_URL_PRIMARY;
 const ROUTER = getAddress("0x204FAca1764B154221e35c0d20aBb3c525710498");
 const QUOTER = getAddress("0x8dc178efb8111bb0973dd9d722ebeff267c98f94");
@@ -18,7 +21,6 @@ const USDG = getAddress("0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168");
 const PERMIT2 = getAddress("0x000000000022D473030F116dDEE9F6B43aC78BA3");
 const ZERO = "0x0000000000000000000000000000000000000000";
 
-const BPS = 10_000n;
 const SLIPPAGE_BPS = 50n;
 const DEADLINE_SECONDS = 120n;
 
@@ -229,8 +231,7 @@ async function quote(zeroForOne, amountIn) {
     throw new Error("Quoter returned an invalid result.");
   }
 
-  const minOut =
-    (expectedOut * (BPS - SLIPPAGE_BPS)) / BPS;
+  const minOut = calculateMinOut(expectedOut, SLIPPAGE_BPS);
 
   if (minOut <= 0n) {
     throw new Error("Minimum output is invalid.");
@@ -311,7 +312,12 @@ async function simulate({ label, zeroForOne, amountIn }) {
   const outputDecimals = zeroForOne ? 6 : 18;
   const outputSymbol = zeroForOne ? "USDG" : "ETH";
 
-  const tx = encodeSwap({ zeroForOne, amountIn, minOut });
+  const tx = buildUniversalRouterV4Swap({
+    zeroForOne,
+    amountIn,
+    minOut,
+    deadline: BigInt(Math.floor(Date.now() / 1000)) + DEADLINE_SECONDS,
+  });
 
   console.log("Amount in:", formatUnits(amountIn, zeroForOne ? 18 : 6));
   console.log(
