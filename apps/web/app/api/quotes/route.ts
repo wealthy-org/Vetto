@@ -25,7 +25,8 @@ const DEMO_ADAPTER: readonly QuoteAdapter[] = DEMO_QUOTES ? [{
       const outDecimals = req.tokenIn === "ETH" ? 6n : 18n;
       const exactOut = req.tokenIn === "ETH"
         ? (amountIn * displayRate * 10n ** outDecimals) / 10n ** inDecimals
-        : (amountIn * 10n ** outDecimals) / (displayRate * 10n ** inDecimals / 10n ** outDecimals);
+        : (amountIn * 10n ** outDecimals) /
+          (displayRate * 10n ** inDecimals);
       const minOut = exactOut;
       const now = Date.now();
       return [{
@@ -42,7 +43,7 @@ const DEMO_ADAPTER: readonly QuoteAdapter[] = DEMO_QUOTES ? [{
         priceImpactBps: 10,
         executableUntil: new Date(now + 60_000).toISOString(),
         executionPathId: `demo-${req.tokenIn.toLowerCase()}-${req.tokenOut.toLowerCase()}`,
-        isExecutable: true,
+        isExecutable: false,
         latencyMs: 12,
       }];
     }
