@@ -46,13 +46,17 @@ export async function collectQuotes(
   const skipped: QuoteResult["skipped"] = [];
 
   const live = adapters.filter((adapter) => {
-    if (adapter.status !== "verified") {
+    if (
+      adapter.status !== "verified" &&
+      adapter.status !== "preview"
+    ) {
       skipped.push({
         adapterId: adapter.id,
         reason: `status: ${adapter.status}`,
       });
       return false;
     }
+
     return true;
   });
 
@@ -60,7 +64,7 @@ export async function collectQuotes(
     return {
       routes: [],
       skipped,
-      message: "No verified route is connected yet. Nothing was invented.",
+      message: "No verified or preview route is connected yet. Nothing was invented.",
     };
   }
 
@@ -69,7 +73,13 @@ export async function collectQuotes(
   );
 
   const all = settled.flatMap((result, index) => {
-    if (result.status === "fulfilled") return result.value;
+    if (result.status === "fulfilled") {
+      return result.value.map((route) =>
+        live[index]!.status === "preview"
+          ? { ...route, isExecutable: false }
+          : route,
+      );
+    }
 
     skipped.push({
       adapterId: live[index]!.id,

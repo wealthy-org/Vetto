@@ -1,4 +1,5 @@
 export type CapabilityStatus = "verified" | "planned" | "unavailable";
+export type QuoteAdapterStatus = CapabilityStatus | "preview";
 
 export interface Capability {
   id: string;
@@ -43,8 +44,8 @@ export interface QuoteRequest {
 
 export interface QuoteAdapter {
   id: string;
-  /** Only "verified" adapters are ever called. */
-  status: CapabilityStatus;
+  /** Preview adapters may return quotes, but never executable routes. */
+  status: QuoteAdapterStatus;
   quote(req: QuoteRequest, signal: AbortSignal): Promise<RouteQuote[]>;
 }
 

@@ -179,6 +179,18 @@ test("non-executable quotes can be displayed but are rejected by default ranking
   );
 });
 
+test("preview adapter returns display-only quotes", async () => {
+  const r = await collectQuotes(
+    req,
+    [adapter("preview", [q({ isExecutable: true })])],
+    { now: NOW },
+  );
+
+  assert.equal(r.routes.length, 1);
+  assert.equal(r.routes[0]?.isExecutable, false);
+  assert.match(r.message, /execution is not enabled/i);
+});
+
 test("caps at five routes", () => {
   const many = Array.from(
     { length: 8 },

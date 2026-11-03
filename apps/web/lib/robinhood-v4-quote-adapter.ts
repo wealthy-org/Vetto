@@ -66,7 +66,7 @@ const client = RPC
 
 export const robinhoodV4QuoteAdapter: QuoteAdapter = {
   id: "robinhood-uniswap-v4",
-  status: "verified",
+  status: "preview",
 
   async quote(req, signal): Promise<RouteQuote[]> {
     if (!client || !USDG) {
