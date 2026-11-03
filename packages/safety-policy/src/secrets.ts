@@ -8,9 +8,9 @@
 export type SecretKind = "private-key" | "seed-phrase";
 
 /** 64 hex mandiri (dengan/tanpa 0x). Alamat (40 hex) dan 65+ hex tidak cocok berkat batas lookaround. */
-const HEX_KEY = /(?<![0-9a-fA-F])(?:0x)?[0-9a-fA-F]{64}(?![0-9a-fA-F])/;
-const PEM_KEY = /-----BEGIN [A-Z ]*PRIVATE KEY-----/;
-const EXTENDED_KEY = /\b[xyzt]prv[1-9A-HJ-NP-Za-km-z]{100,}/;
+const HEX_KEY = /(?<![0-9a-fA-F])(?:0[xX])?[0-9a-fA-F]{64}(?![0-9a-fA-F])/;
+const PEM_KEY = /-----BEGIN [A-Z ]*PRIVATE KEY-----/i;
+const EXTENDED_KEY = /(?<![A-HJ-NP-Za-km-z0-9])(?:[xyzt]prv)[1-9A-HJ-NP-Za-km-z]{100,}/i;
 
 const WINDOW = 12; // panjang minimum frasa BIP39
 const MIN_HITS = 11; // toleransi satu kata salah ketik

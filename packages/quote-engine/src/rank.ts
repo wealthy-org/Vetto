@@ -3,8 +3,13 @@ import type { QuoteRequest, RouteQuote } from "./types.ts";
 const big = (s: string): bigint | null => (/^\d+$/.test(s) ? BigInt(s) : null);
 
 /** Reject anything that isn't a coherent, unexpired, executable answer to *this* request. */
-export function isValidQuote(q: RouteQuote, req: QuoteRequest, now: number): boolean {
-  if (!q.isExecutable) return false;
+export function isValidQuote(
+  q: RouteQuote,
+  req: QuoteRequest,
+  now: number,
+  allowNonExecutable = false,
+): boolean {
+  if (!q.isExecutable && !allowNonExecutable) return false;if (!q.isExecutable) return false;
   if (q.tokenIn !== req.tokenIn || q.tokenOut !== req.tokenOut) return false;
   if (q.amountInBaseUnits !== req.amountInBaseUnits) return false;
   const expected = big(q.expectedOutBaseUnits), min = big(q.minOutBaseUnits);
@@ -18,9 +23,15 @@ export function isValidQuote(q: RouteQuote, req: QuoteRequest, now: number): boo
 const netOut = (q: RouteQuote) => BigInt(q.expectedOutBaseUnits) - BigInt(q.networkFeeEstimate) - BigInt(q.protocolFeeEstimate);
 
 /** Best net output first. Ties: lower price impact, then lower latency. Never more than `max` routes. */
-export function rankQuotes(quotes: RouteQuote[], req: QuoteRequest, now = Date.now(), max = 5): RouteQuote[] {
+export function rankQuotes(
+  quotes: RouteQuote[],
+  req: QuoteRequest,
+  now = Date.now(),
+  max = 5,
+  allowNonExecutable = false,
+): RouteQuote[] {
   return quotes
-    .filter((q) => isValidQuote(q, req, now))
+    .filter((q) => isValidQuote(q, req, now, allowNonExecutable))
     .sort((a, b) => {
       const d = netOut(b) - netOut(a);
       if (d !== 0n) return d > 0n ? 1 : -1;

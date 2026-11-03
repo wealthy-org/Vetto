@@ -32,15 +32,22 @@ export async function collectQuotes(req: QuoteRequest, adapters: readonly QuoteA
     return [];
   });
 
-  let routes = rankQuotes(all, req, now, maxRoutes);
+  let routes = rankQuotes(all, req, now, maxRoutes, true);
   if (req.privateRequested) {
     routes = routes.filter((r) => r.verifiedPrivacyRelay === true);
     if (routes.length === 0) {
       return { routes: [], skipped, message: "Private submission is unavailable right now. I won't fall back to a public route without asking you." };
     }
   }
+  const quoteOnly = routes.some((r) => !r.isExecutable);
+
   return {
-    routes, skipped,
-    message: routes.length === 0 ? "Adapters responded, but none returned an executable, unexpired quote." : `${routes.length} executable route${routes.length > 1 ? "s" : ""}, ranked by what you receive.`,
+    routes,
+    skipped,
+    message: routes.length === 0
+      ? "No valid quote is currently available."
+      : quoteOnly
+        ? `${routes.length} live quote(s) found. Swap execution is not enabled yet.`
+        : `${routes.length} executable routes found.`,
   };
 }

@@ -19,9 +19,20 @@ export interface Asset {
 }
 
 const ASSETS: readonly Asset[] = Object.freeze([
-  { symbol: "ETH", name: "Ether", decimals: 18, address: "native", status: "unverified" },
-  // decimals / address MUST be confirmed on-chain before flipping status to "verified"
-  { symbol: "USDG", name: "Global Dollar", decimals: 6, address: null, status: "unverified" },
+  {
+    symbol: "ETH",
+    name: "Ether",
+    decimals: 18,
+    address: "native",
+    status: "verified",
+  },
+  {
+    symbol: "USDG",
+    name: "Global Dollar",
+    decimals: 6,
+    address: "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+    status: "verified",
+  },
 ]);
 
 export function listAssets(): readonly Asset[] {

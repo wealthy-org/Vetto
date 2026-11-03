@@ -10,8 +10,11 @@ test("private key: 64 hex with or without 0x, in a sentence", () => {
   const k = "ab".repeat(32);
   assert.equal(detectSecret(k), "private-key");
   assert.equal(detectSecret(`0x${k}`), "private-key");
+  assert.equal(detectSecret(`0X${k}`), "private-key");
   assert.equal(detectSecret(`my key is 0x${k}, please swap`), "private-key");
   assert.equal(detectSecret("-----BEGIN EC PRIVATE KEY-----\nMHcC"), "private-key");
+  assert.equal(detectSecret("-----begin rsa private key-----\nMHcC"), "private-key");
+  assert.equal(detectSecret(`xprv${"a".repeat(120)}`), "private-key");
 });
 
 test("private key: addresses and other lengths are not flagged", () => {

@@ -58,6 +58,7 @@ The checker compares PoolManager storage with the official Uniswap v4 StateView 
 - Intent preview + clarification, passive link policy check, honest "no route yet" quotes.
 - Passive link checks flag blocked URL patterns, punycode, and simple lookalikes of selected crypto brands. These are heuristic signals only; target sites are not contacted and no safety guarantee is made.
 - **No** token execution, **no** live quotes: Phase 0 verification is still open. Sign-in is not transaction approval. Email/social login, contract wallets, and wallet-based execution are not implemented. See `docs/INTEGRATION_MATRIX.md`.
+- For local UI review only, set `VETTO_DEMO_QUOTES=true` to enable a deterministic ETH/USDG demo quote path. It is intentionally off by default and never represents a verified live market quote.
 
 ## Wallet sign-in setup
 Set `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` in `apps/web/.env.local`, configure `DATABASE_URL` and a non-default `RATE_LIMIT_SALT` (plus the exact HTTPS `APP_ORIGIN` in production), then run:
