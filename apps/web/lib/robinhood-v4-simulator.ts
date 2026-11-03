@@ -91,6 +91,13 @@ export interface SimulationInput {
   slippageBps: number;
 }
 
+type SimulatorClient = ReturnType<typeof createPublicClient>;
+
+export interface SimulationDependencies {
+  createClient?: (rpc: string) => SimulatorClient;
+  now?: () => number;
+}
+
 export interface SimulationResult {
   status: "passed" | "failed";
   chainId: number;
@@ -107,6 +114,7 @@ export interface SimulationResult {
 
 export async function simulateRobinhoodV4Swap(
   input: SimulationInput,
+  dependencies: SimulationDependencies = {},
 ): Promise<SimulationResult> {
   const wallet = getAddress(input.wallet);
 
@@ -142,9 +150,17 @@ export async function simulateRobinhoodV4Swap(
     throw new Error("Robinhood RPC or verified USDG configuration is missing.");
   }
 
-  const client = createPublicClient({
-    transport: http(rpc, { timeout: 15000, retryCount: 0 }),
-  });
+  const nowMs = dependencies.now?.() ?? Date.now();
+const nowSeconds = BigInt(Math.floor(nowMs / 1000));
+
+  const createClient =
+  dependencies.createClient ??
+  ((url: string) =>
+    createPublicClient({
+      transport: http(url, { timeout: 15000, retryCount: 0 }),
+    }));
+
+const client = createClient(rpc);
 
   const chainId = await client.getChainId();
   if (chainId !== CHAIN_ID) {
@@ -182,21 +198,24 @@ export async function simulateRobinhoodV4Swap(
   }],
 });
 
-const [quoteCall, gasPrice, inputBalance] = await Promise.all([
+const [quoteCall, gasPrice, nativeBalance, tokenBalance] = await Promise.all([
   client.call({
     to: QUOTER,
     data: quoteData,
   }),
-    client.getGasPrice(),
-    zeroForOne
-      ? client.getBalance({ address: wallet })
-      : client.readContract({
-          address: USDG,
-          abi: erc20Abi,
-          functionName: "balanceOf",
-          args: [wallet],
-        }),
-  ]);
+  client.getGasPrice(),
+  client.getBalance({ address: wallet }),
+  zeroForOne
+    ? Promise.resolve(0n)
+    : client.readContract({
+        address: USDG,
+        abi: erc20Abi,
+        functionName: "balanceOf",
+        args: [wallet],
+      }),
+]);
+
+const inputBalance = zeroForOne ? nativeBalance : tokenBalance;
 
   if (!quoteCall.data) {
     throw new Error("Quoter returned empty data.");
@@ -209,11 +228,10 @@ const [quoteCall, gasPrice, inputBalance] = await Promise.all([
     });
 
     const expectedOut = quote[0];
-    const quoterGas = quote[1];
 
-  if (expectedOut <= 0n || quoterGas <= 0n) {
+    if (expectedOut <= 0n) {
     throw new Error("Quoter returned an invalid result.");
-  }
+    }
 
   const minOut =
     expectedOut * BigInt(10000 - input.slippageBps) / 10000n;
@@ -261,7 +279,7 @@ const [quoteCall, gasPrice, inputBalance] = await Promise.all([
     }
 
     if (permitAllowance[0] < amountIn
-      || permitAllowance[1] <= BigInt(Math.floor(Date.now() / 1000))) {
+      || permitAllowance[1] <= nowSeconds) {
       return {
         status: "failed", chainId, wallet, tokenIn, tokenOut,
         amountInBaseUnits: amountIn.toString(),
@@ -273,50 +291,110 @@ const [quoteCall, gasPrice, inputBalance] = await Promise.all([
     }
   }
 
-  const deadline = BigInt(Math.floor(Date.now() / 1000)) + 120n;
+ const deadline = nowSeconds + 120n;
 
-  const tx = buildUniversalRouterV4Swap({
-    zeroForOne,
-    amountIn,
-    minOut,
-    deadline,
+const tx = buildUniversalRouterV4Swap({
+  zeroForOne,
+  amountIn,
+  minOut,
+  deadline,
+});
+
+let estimatedGas: bigint;
+
+try {
+  estimatedGas = await client.estimateGas({
+    account: wallet,
+    to: ROUTER,
+    data: tx.data,
+    value: tx.value,
+  });
+} catch {
+  return {
+    status: "failed",
+    chainId,
+    wallet,
+    tokenIn,
+    tokenOut,
+    amountInBaseUnits: amountIn.toString(),
+    expectedOutBaseUnits: expectedOut.toString(),
+    minOutBaseUnits: minOut.toString(),
+    reason: "Router gas estimation failed.",
+    broadcast: false,
+  };
+}
+
+if (estimatedGas <= 0n || gasPrice <= 0n) {
+  return {
+    status: "failed",
+    chainId,
+    wallet,
+    tokenIn,
+    tokenOut,
+    amountInBaseUnits: amountIn.toString(),
+    expectedOutBaseUnits: expectedOut.toString(),
+    minOutBaseUnits: minOut.toString(),
+    reason: "Invalid Router gas estimate or gas price.",
+    broadcast: false,
+  };
+}
+
+const gasCost = estimatedGas * gasPrice;
+const gasCostWithBuffer = (gasCost * 120n + 99n) / 100n;
+
+const requiredNativeBalance = zeroForOne
+  ? amountIn + gasCostWithBuffer
+  : gasCostWithBuffer;
+
+if (nativeBalance < requiredNativeBalance) {
+  return {
+    status: "failed",
+    chainId,
+    wallet,
+    tokenIn,
+    tokenOut,
+    amountInBaseUnits: amountIn.toString(),
+    expectedOutBaseUnits: expectedOut.toString(),
+    minOutBaseUnits: minOut.toString(),
+    estimatedGas: estimatedGas.toString(),
+    reason: "Insufficient ETH balance for swap amount and gas buffer.",
+    broadcast: false,
+  };
+}
+
+try {
+  await client.call({
+    account: wallet,
+    to: ROUTER,
+    data: tx.data,
+    value: tx.value,
   });
 
-  const gasCost = quoterGas * gasPrice;
-
-  try {
-    const simulation = await client.call({
-      account: wallet,
-      to: ROUTER,
-      data: tx.data,
-      value: tx.value,
-    });
-
-    return {
-      status: "passed",
-      chainId,
-      wallet,
-      tokenIn,
-      tokenOut,
-      amountInBaseUnits: amountIn.toString(),
-      expectedOutBaseUnits: expectedOut.toString(),
-      minOutBaseUnits: minOut.toString(),
-      estimatedGas: quoterGas.toString(),
-      broadcast: false,
-    };
-  } catch {
-    return {
-      status: "failed",
-      chainId,
-      wallet,
-      tokenIn,
-      tokenOut,
-      amountInBaseUnits: amountIn.toString(),
-      expectedOutBaseUnits: expectedOut.toString(),
-      minOutBaseUnits: minOut.toString(),
-      estimatedGas: quoterGas.toString(),
-      reason: "Router eth_call simulation reverted.",
-      broadcast: false,
-    };
-  }
+  return {
+    status: "passed",
+    chainId,
+    wallet,
+    tokenIn,
+    tokenOut,
+    amountInBaseUnits: amountIn.toString(),
+    expectedOutBaseUnits: expectedOut.toString(),
+    minOutBaseUnits: minOut.toString(),
+    estimatedGas: estimatedGas.toString(),
+    broadcast: false,
+  };
+} catch {
+  return {
+    status: "failed",
+    chainId,
+    wallet,
+    tokenIn,
+    tokenOut,
+    amountInBaseUnits: amountIn.toString(),
+    expectedOutBaseUnits: expectedOut.toString(),
+    minOutBaseUnits: minOut.toString(),
+    estimatedGas: estimatedGas.toString(),
+    reason: "Router eth_call simulation reverted.",
+    broadcast: false,
+  };
+}
 }
