@@ -55,10 +55,10 @@ The checker compares PoolManager storage with the official Uniswap v4 StateView 
 - Landing page and animations, chat shell, docs, WalletConnect EOA sign-in using a chain-bound message on Ethereum Mainnet (chain ID 1) or Robinhood Chain (4663), one-time SIWE challenges, and database-backed sessions (requires `DATABASE_URL`, migrations, and `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`).
 - Signed-in users can view read-only ETH/USDG balances at a shared Robinhood Chain block, compared across both configured RPCs. The USDG address must be configured; symbol/decimals checks do not prove token ownership or official status.
 - Authenticated per-user chat prompt history at `/api/history`, with idempotent writes, a 100-entry retention cap, and a mobile history drawer. Preview-mode prompts remain in the current tab only.
-- Intent preview + clarification, passive link policy check, honest "no route yet" quotes.
+- Intent preview + clarification, passive link policy check, and Robinhood v4 quote review for the configured ETH/USDG pair. Quotes are display-only; transaction execution is disabled.
 - Passive link checks flag blocked URL patterns, punycode, and simple lookalikes of selected crypto brands. These are heuristic signals only; target sites are not contacted and no safety guarantee is made.
-- **No** token execution, **no** live quotes: Phase 0 verification is still open. Sign-in is not transaction approval. Email/social login, contract wallets, and wallet-based execution are not implemented. See `docs/INTEGRATION_MATRIX.md`.
-- For local UI review only, set `VETTO_DEMO_QUOTES=true` to enable a deterministic ETH/USDG demo quote path. It is intentionally off by default and never represents a verified live market quote.
+- **No token execution.** Robinhood v4 quote retrieval is available for the configured pair, but quotes are display-only and are not authorization or transaction-safety guarantees. Sign-in is not transaction approval. Email/social login, contract wallets, and wallet-based execution are not implemented. See `docs/INTEGRATION_MATRIX.md`.
+- Quote review currently uses the configured Robinhood v4 quote adapter. Returned quotes are display-only and cannot execute swaps. No demo price is presented as a live market quote.
 
 ## Wallet sign-in setup
 Set `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` in `apps/web/.env.local`, configure `DATABASE_URL` and a non-default `RATE_LIMIT_SALT` (plus the exact HTTPS `APP_ORIGIN` in production), then run:

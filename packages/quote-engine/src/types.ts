@@ -7,7 +7,11 @@ export interface Capability {
   note: string;
 }
 
-/** Normalised quote. All fee fields are denominated in tokenOut base units so ranking is apples-to-apples. */
+/**
+ * Normalised quote.
+ * Fee estimates, when available, are denominated in tokenOut base units.
+ * Unavailable estimates must be represented as null.
+ */
 export interface RouteQuote {
   quoteId: string;
   routeType: "direct" | "split" | "solver" | "private" | "rfq";
@@ -17,8 +21,9 @@ export interface RouteQuote {
   amountInBaseUnits: string;
   expectedOutBaseUnits: string;
   minOutBaseUnits: string;
-  networkFeeEstimate: string;
-  protocolFeeEstimate: string;
+  feeEstimatesAvailable: boolean;
+  networkFeeEstimate: string | null;
+  protocolFeeEstimate: string | null;
   priceImpactBps?: number;
   executableUntil: string; // ISO-8601
   executionPathId: string;

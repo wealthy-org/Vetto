@@ -1,6 +1,7 @@
 
 import type { QuoteRequest, RouteQuote } from "./types.ts";
 
+const MAX_UINT256 = (1n << 256n) - 1n;
 const MAX_UINT256_DIGITS = 78;
 const MAX_PRICE_IMPACT_BPS = 10_000;
 const MAX_LATENCY_MS = 120_000;
@@ -17,7 +18,8 @@ const big = (value: unknown): bigint | null => {
   }
 
   try {
-    return BigInt(value);
+    const parsed = BigInt(value);
+    return parsed <= MAX_UINT256 ? parsed : null;
   } catch {
     return null;
   }
@@ -28,18 +30,14 @@ const isNonEmptyString = (value: unknown, max = 256): value is string =>
   value.length > 0 &&
   value.length <= max;
 
-function validOptionalMetric(
-  value: unknown,
-  max: number,
-): boolean {
-  return value === undefined ||
-    (
-      typeof value === "number" &&
-      Number.isFinite(value) &&
-      Number.isInteger(value) &&
-      value >= 0 &&
-      value <= max
-    );
+function validOptionalMetric(value: unknown, max: number): boolean {
+  return value === undefined || (
+    typeof value === "number" &&
+    Number.isFinite(value) &&
+    Number.isInteger(value) &&
+    value >= 0 &&
+    value <= max
+  );
 }
 
 /** Reject malformed, mismatched, expired, or incoherent quotes. */
@@ -86,20 +84,11 @@ export function isValidQuote(
   const amountIn = big(req.amountInBaseUnits);
   const expected = big(q.expectedOutBaseUnits);
   const min = big(q.minOutBaseUnits);
-  const net = big(q.networkFeeEstimate);
-  const proto = big(q.protocolFeeEstimate);
 
   if (
     amountIn === null ||
     expected === null ||
     min === null ||
-    net === null ||
-    proto === null
-  ) {
-    return false;
-  }
-
-  if (
     amountIn <= 0n ||
     expected <= 0n ||
     min <= 0n ||
@@ -108,7 +97,26 @@ export function isValidQuote(
     return false;
   }
 
-  if (net > expected || proto > expected - net) {
+  if (typeof q.feeEstimatesAvailable !== "boolean") {
+    return false;
+  }
+
+  if (q.feeEstimatesAvailable) {
+    const network = big(q.networkFeeEstimate);
+    const protocol = big(q.protocolFeeEstimate);
+
+    if (
+      network === null ||
+      protocol === null ||
+      network > expected ||
+      protocol > expected - network
+    ) {
+      return false;
+    }
+  } else if (
+    q.networkFeeEstimate !== null ||
+    q.protocolFeeEstimate !== null
+  ) {
     return false;
   }
 
@@ -136,16 +144,25 @@ export function isValidQuote(
   if (typeof q.executableUntil !== "string") return false;
 
   const until = Date.parse(q.executableUntil);
-
   return Number.isFinite(until) && until > now;
 }
 
-const netOut = (q: RouteQuote): bigint =>
-  BigInt(q.expectedOutBaseUnits) -
-  BigInt(q.networkFeeEstimate) -
-  BigInt(q.protocolFeeEstimate);
+const grossOut = (q: RouteQuote): bigint =>
+  BigInt(q.expectedOutBaseUnits);
 
-/** Best net output first. Ties: lower price impact, then lower latency. */
+const netOut = (q: RouteQuote): bigint => {
+  // Called only when every candidate has verified fee estimates.
+  return (
+    grossOut(q) -
+    BigInt(q.networkFeeEstimate!) -
+    BigInt(q.protocolFeeEstimate!)
+  );
+};
+
+/**
+ * Uses net output only if every valid candidate has verified fee estimates.
+ * Otherwise compares gross output consistently for all candidates.
+ */
 export function rankQuotes(
   quotes: RouteQuote[],
   req: QuoteRequest,
@@ -164,10 +181,17 @@ export function rankQuotes(
 
   const limit = Math.min(max, MAX_ROUTES);
 
-  return quotes
-    .filter((q) => isValidQuote(q, req, now, allowNonExecutable))
+  const valid = quotes.filter((q) =>
+    isValidQuote(q, req, now, allowNonExecutable)
+  );
+
+  const compareNet = valid.every((q) => q.feeEstimatesAvailable);
+
+  return valid
     .sort((a, b) => {
-      const difference = netOut(b) - netOut(a);
+      const difference = compareNet
+        ? netOut(b) - netOut(a)
+        : grossOut(b) - grossOut(a);
 
       if (difference !== 0n) {
         return difference > 0n ? 1 : -1;

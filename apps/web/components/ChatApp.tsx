@@ -21,7 +21,7 @@ type HistoryEntry = { id: string; prompt: string };
 type HistoryMode = "loading" | "preview" | "saved" | "error";
 
 const SUGGESTIONS = ["Swap 100 USDG to ETH", "Is fastclaim-hood.xyz safe?", "Mint the NFT at nft-mint-pass.app max 0.01 ETH"];
-const PRIVATE_COPY = "Private submission is available when the connected relay supports this network. Your transaction becomes public after confirmation.";
+const PRIVATE_COPY = "Private submission is not available yet. No verified privacy relay is connected.";
 const BIP39_WORDS = new Set<string>(english);
 
 class ApiError extends Error {
@@ -457,60 +457,247 @@ function Row({ k, v, dim }: { k: string; v: string; dim?: boolean }) {
   return <div className="flex justify-between gap-3 border-t border-white/5 py-2 text-sm"><dt className="text-white/50">{k}</dt><dd className={dim ? "text-white/35" : "font-medium"}>{v}</dd></div>;
 }
 
+
 function Panel({ msg }: { msg: Msg | undefined }) {
   const intent = msg?.result?.intent;
+
   if (!msg || !intent) {
-    return <div className="text-sm text-white/45"><h2 className="mb-2 font-semibold text-white/70">Review</h2>Quotes, safety findings and fee breakdowns appear here. You’ll always see amounts, destination and approval scope before anything is signed.</div>;
+    return (
+      <div className="text-sm text-white/45">
+        <h2 className="mb-2 font-semibold text-white/70">Review</h2>
+        Quotes and safety findings appear here. Amounts, destination
+        and approval scope must be reviewed before anything is signed.
+      </div>
+    );
   }
+
   if (intent.kind === "swap") {
-    const out = findAsset(intent.tokenOut), tin = findAsset(intent.tokenIn);
-    const routes = msg.quote?.routes ?? [];
+    const out = findAsset(intent.tokenOut);
+    const tin = findAsset(intent.tokenIn);
+    const quote = msg.quote?.routes[0];
+    const hasQuote = Boolean(quote && out);
+
+    const feeText =
+      quote?.feeEstimatesAvailable === true &&
+      typeof quote.networkFeeEstimate === "string" &&
+      typeof quote.protocolFeeEstimate === "string" &&
+      out
+        ? `${formatUnits(
+            BigInt(quote.networkFeeEstimate) +
+              BigInt(quote.protocolFeeEstimate),
+            out.decimals,
+          )} ${out.symbol} (estimated)`
+        : "Unavailable — not verified";
+
+    const expiryText = quote
+      ? quote.executableUntil
+      : "Unavailable";
+
+    const impactText = quote?.priceImpactBps !== undefined
+      ? `${(quote.priceImpactBps / 100).toFixed(2)}%`
+      : "Unavailable";
+
+    const latencyText = quote?.latencyMs !== undefined
+      ? `${quote.latencyMs} ms`
+      : "Unavailable";
+
     return (
       <div className="step-in">
         <h2 className="mb-1 font-semibold">Swap review</h2>
         <p className="mb-3 text-xs text-lilac">{msg.result?.label}</p>
+
         <dl>
-          <Row k="You pay" v={`${intent.amountIn} ${intent.tokenIn}`} />
-          <Row k="You receive" v={routes[0] && out ? `${formatUnits(BigInt(routes[0].expectedOutBaseUnits), out.decimals)} ${out.symbol}` : `— ${intent.tokenOut}`} dim={!routes[0]} />
-          <Row k="Min received" v={routes[0] && out ? `${formatUnits(BigInt(routes[0].minOutBaseUnits), out.decimals)} ${out.symbol}` : "—"} dim={!routes[0]} />
-          <Row k="Max slippage" v={`${((intent.slippageBps ?? 50) / 100).toString()}%${intent.slippageBps ? "" : " (default)"}`} />
-          <Row k="Venue" v={routes[0]?.provider ?? "—"} dim={!routes[0]} />
-          <Row k="Fees · impact · gas" v="—" dim />
-          <Row k="Quote expires" v="—" dim />
-          <Row k="Submission" v={intent.privateRequested ? "Private requested" : "Public"} />
+          <Row
+            k="You pay"
+            v={`${intent.amountIn} ${intent.tokenIn}`}
+          />
+          <Row
+            k="You receive"
+            v={
+              hasQuote && quote && out
+                ? `${formatUnits(BigInt(quote.expectedOutBaseUnits), out.decimals)} ${out.symbol}`
+                : `— ${intent.tokenOut}`
+            }
+            dim={!hasQuote}
+          />
+          <Row
+            k="Min received"
+            v={
+              hasQuote && quote && out
+                ? `${formatUnits(BigInt(quote.minOutBaseUnits), out.decimals)} ${out.symbol}`
+                : "Unavailable"
+            }
+            dim={!hasQuote}
+          />
+          <Row
+            k="Max slippage"
+            v={`${((intent.slippageBps ?? 50) / 100).toFixed(2)}%${intent.slippageBps === undefined ? " (default)" : ""}`}
+          />
+          <Row
+            k="Venue"
+            v={quote?.provider ?? "Unavailable"}
+            dim={!quote}
+          />
+          <Row
+            k="Estimated fees"
+            v={feeText}
+            dim={!quote?.feeEstimatesAvailable}
+          />
+          <Row
+            k="Price impact"
+            v={impactText}
+            dim={!quote || quote.priceImpactBps === undefined}
+          />
+          <Row
+            k="Quote latency"
+            v={latencyText}
+            dim={!quote || quote.latencyMs === undefined}
+          />
+          <Row
+            k="Quote expiry (UTC)"
+            v={expiryText}
+            dim={!quote}
+          />
+          <Row
+            k="Submission"
+            v={intent.privateRequested ? "Private requested — unavailable" : "Public"}
+          />
         </dl>
+
         <div className="mt-4 rounded-xl border border-white/10 bg-white/[.03] p-3 text-xs leading-relaxed text-white/65">
-          <div className="mb-1"><StatusChip status="planned" /></div>
-          {msg.quote ? msg.quote.message : "Looking for executable routes…"}
-          {(tin?.status === "unverified" || out?.status === "unverified") && <p className="mt-2 text-white/45">Token addresses are not verified yet, so no quote can be requested and nothing here is a price.</p>}
+          <div className="mb-1">
+            <StatusChip status="planned" />
+          </div>
+
+          {msg.quote
+            ? msg.quote.message
+            : "Waiting for quote response."}
+
+          {quote && !quote.isExecutable && (
+            <p className="mt-2 text-peach">
+              Display-only quote. This route cannot execute a swap.
+            </p>
+          )}
+
+          {intent.privateRequested && (
+            <p className="mt-2 text-peach">
+              No verified private submission relay is available.
+              A public route will not be substituted.
+            </p>
+          )}
+
+          {(tin?.status === "unverified" || out?.status === "unverified") && (
+            <p className="mt-2 text-white/45">
+              Token metadata is not verified. Do not rely on this quote.
+            </p>
+          )}
         </div>
-        <button type="button" disabled className="btn btn-primary mt-4 w-full opacity-50">Sign in your wallet</button>
-        <p className="mt-2 text-center text-[11px] text-white/35">Signing is not connected in this build. Nothing can execute.</p>
+
+        <button
+          type="button"
+          disabled
+          className="btn btn-primary mt-4 w-full opacity-50"
+        >
+          Swap execution unavailable
+        </button>
+
+        <p className="mt-2 text-center text-[11px] text-white/35">
+          No transaction will be signed or broadcast by this build.
+        </p>
       </div>
     );
   }
+
   if (intent.kind === "inspect") {
-    const r = msg.inspect?.report;
+    const report = msg.inspect?.report;
+
     return (
       <div className="step-in">
         <h2 className="mb-1 font-semibold">Link check</h2>
         <p className="mb-3 text-xs text-lilac">{msg.result?.label}</p>
-        {!r ? <p className="text-sm text-white/50">Checking…</p> : (
+
+        {!report ? (
+          <p className="text-sm text-white/50">Checking…</p>
+        ) : (
           <>
-            <div className="mb-3 flex items-center gap-2"><span className={`status ${r.band === "dangerous" ? "status-unavailable" : r.band === "low concern" ? "status-verified" : "status-planned"} capitalize`}>{r.band}</span>{r.score !== null && <span className="text-xs text-white/50">score {r.score}/100</span>}</div>
-            {r.findings.length === 0 ? <p className="text-sm text-white/55">No red flags in the checks that ran.</p> : (
-              <ul className="space-y-2">{r.findings.map((f) => (<li key={f.id} className="rounded-xl border border-white/10 bg-white/[.03] p-3 text-xs"><div className="font-medium capitalize">{f.severity}: {f.title}</div><div className="mt-1 text-white/60">{f.evidence}</div>{f.uncertainty && <div className="mt-1 text-white/40">Unknown: {f.uncertainty}</div>}</li>))}</ul>
+            <div className="mb-3 flex items-center gap-2">
+              <span
+                className={`status ${
+                  report.band === "dangerous"
+                    ? "status-unavailable"
+                    : report.band === "low concern"
+                      ? "status-verified"
+                      : "status-planned"
+                } capitalize`}
+              >
+                {report.band}
+              </span>
+              {report.score !== null && (
+                <span className="text-xs text-white/50">
+                  score {report.score}/100
+                </span>
+              )}
+            </div>
+
+            {report.findings.length === 0 ? (
+              <p className="text-sm text-white/55">
+                No red flags in the checks that ran.
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                {report.findings.map((finding) => (
+                  <li
+                    key={finding.id}
+                    className="rounded-xl border border-white/10 bg-white/[.03] p-3 text-xs"
+                  >
+                    <div className="font-medium capitalize">
+                      {finding.severity}: {finding.title}
+                    </div>
+                    <div className="mt-1 text-white/60">
+                      {finding.evidence}
+                    </div>
+                    {finding.uncertainty && (
+                      <div className="mt-1 text-white/40">
+                        Unknown: {finding.uncertainty}
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
             )}
+
             <h3 className="mb-1 mt-4 text-xs text-white/40">Checks run</h3>
-            <ul className="space-y-1 text-xs text-white/70">{r.checksRun.map((c) => <li key={c}>✓ {c}</li>)}</ul>
-            <h3 className="mb-1 mt-4 text-xs text-white/40">Not run yet</h3>
-            <ul className="space-y-1 text-xs text-white/50">{r.checksUnavailable.map((c) => <li key={c}>– {c}</li>)}</ul>
-            <p className="mt-4 text-[11px] leading-relaxed text-white/40">{r.disclaimer}</p>
+            <ul className="space-y-1 text-xs text-white/70">
+              {report.checksRun.map((check) => (
+                <li key={check}>✓ {check}</li>
+              ))}
+            </ul>
+
+            <h3 className="mb-1 mt-4 text-xs text-white/40">
+              Not run yet
+            </h3>
+            <ul className="space-y-1 text-xs text-white/50">
+              {report.checksUnavailable.map((check) => (
+                <li key={check}>– {check}</li>
+              ))}
+            </ul>
+
+            <p className="mt-4 text-[11px] leading-relaxed text-white/40">
+              {report.disclaimer}
+            </p>
           </>
         )}
       </div>
     );
   }
+
   const cap = msg.capId ? capabilityById(msg.capId) : undefined;
-  return cap ? <div className="step-in"><h2 className="mb-2 font-semibold">{cap.label}</h2><StatusChip status={cap.status} /><p className="mt-3 text-sm text-white/60">{cap.note}</p></div> : null;
+
+  return cap ? (
+    <div className="step-in">
+      <h2 className="mb-2 font-semibold">{cap.label}</h2>
+      <StatusChip status={cap.status} />
+      <p className="mt-3 text-sm text-white/60">{cap.note}</p>
+    </div>
+  ) : null;
 }
