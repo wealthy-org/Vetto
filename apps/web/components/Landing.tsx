@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useRef } from "react";
+import { useLayoutEffect, useRef } from "react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { Banker } from "./Banker";
@@ -30,7 +30,7 @@ export function Landing() {
   const wrap = useRef<HTMLDivElement>(null);
   const lens = useRef<LensControl>({ fade: 0, kick: () => {} });
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     gsap.registerPlugin(ScrollTrigger);
     const root = wrap.current;
     if (!root) return;
@@ -55,8 +55,9 @@ export function Landing() {
       }
 
       // --- the scroll story (scrubbed, so it plays backwards too)
-      const U = 10 / SCROLL_SCREENS; // timeline units per screen of scroll
-      const H = () => window.innerHeight;
+      const screens = desktop ? SCROLL_SCREENS : 1.2;
+      const U = 10 / screens;
+      const H = () => window.innerHeight; 
       const shift = () => (desktop ? window.innerWidth * 0.2 : 0);
 
       gsap.set(char, { transformOrigin: "50% 100%" });
@@ -72,7 +73,7 @@ export function Landing() {
           scrub: reduced ? true : 0.7,
           invalidateOnRefresh: true,
           onUpdate: (self) => {
-            const waving = self.progress * SCROLL_SCREENS >= 2.95;
+            const waving = self.progress * screens >= 2.95;
             const want = waving ? "wave" : "idle";
             if (banker.getAttribute("data-pose") !== want) banker.setAttribute("data-pose", want);
           },
@@ -109,7 +110,7 @@ export function Landing() {
       <Nav />
       <main>
         {/* HERO + MEET: one pinned stage, choreographed by scroll */}
-        <div ref={wrap} className="relative" style={{ height: `${STAGE_VH}svh` }}>
+        <div ref={wrap} className="relative h-[220svh] lg:h-[430svh]">
           <div className="sticky top-0 isolate h-[100svh] overflow-hidden">
             <TextLensBackground control={lens} className="z-0" />
             <div data-glow className="stage-glow pointer-events-none absolute inset-0 z-[1]" aria-hidden="true" />
@@ -118,7 +119,7 @@ export function Landing() {
             {/* Vetto (z below the copy, above the grid) */}
             <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[3] flex justify-center">
               <div data-char className="opacity-0 will-change-transform">
-                <Banker pose="idle" fade={false} className="h-[78svh] w-auto max-w-none lg:h-[84svh]" />
+                <Banker pose="idle" fade={false} className="h-[48svh] w-auto max-w-none sm:h-[56svh] lg:h-[84svh]" />
               </div>
             </div>
 
@@ -149,7 +150,7 @@ export function Landing() {
             <div data-meet-copy className="pointer-events-none absolute inset-0 z-10 mx-auto flex max-w-6xl items-start px-5 pt-24 lg:items-center lg:pt-10">
               <div className="pointer-events-auto w-full lg:w-1/2">
                 <p data-meet-item className="mb-4 text-sm text-lilac">Meet Vetto</p>
-                <h2 data-meet-item className="h-display text-[2.6rem] sm:text-5xl md:text-6xl">Say it plainly.<br /><span className="grad">He reads the fine print.</span></h2>
+                <h2 data-meet-item className="h-display text-[2rem] sm:text-5xl md:text-6xl">Say it plainly.<br /><span className="grad">He reads the fine print.</span></h2>
                 <p data-meet-item className="mt-5 max-w-md text-white/60">Preview a request or run a passive link check. Swap execution, isolated dApp scans, and burner tasks remain planned until their integrations are verified.</p>
                 <ul data-meet-item className="mt-6 flex flex-wrap gap-2">
                   {CHIPS.map((c) => (<li key={c}><Link href={`/app?ask=${encodeURIComponent(c)}`} className="chip backdrop-blur"><i className="h-1.5 w-1.5 rounded-full bg-lilac" />{c}</Link></li>))}

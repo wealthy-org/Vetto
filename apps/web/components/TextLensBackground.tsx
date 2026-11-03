@@ -210,7 +210,11 @@ export function TextLensBackground({ word = "vetto", control, className = "", in
     const fadeNow = () => Math.min(1, Math.max(0, control?.current.fade ?? 0));
 
     const buildTexture = () => {
-      let scale = Math.min(2.5, Math.max(1.5, dpr * 1.25));
+    const compact = window.matchMedia("(max-width: 767px)").matches;
+    let scale = Math.min(
+      compact ? 1.5 : 2.5,
+      Math.max(compact ? 1 : 1.5, dpr * (compact ? 0.9 : 1.25))
+    );
       while ((width + MARGIN * 2) * scale > 4096 || (height + MARGIN * 2) * scale > 4096) scale *= 0.9;
 
       const textureCanvas = document.createElement("canvas");
@@ -305,7 +309,8 @@ export function TextLensBackground({ word = "vetto", control, className = "", in
     };
 
     const resize = () => {
-      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const compact = window.matchMedia("(max-width: 767px)").matches;
+      dpr = Math.min(window.devicePixelRatio || 1, compact ? 1.5 : 2);
       width = canvas.clientWidth;
       height = canvas.clientHeight;
       if (!width || !height) return;
