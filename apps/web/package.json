@@ -8,10 +8,12 @@
     "start": "next start",
     "typecheck": "tsc -p tsconfig.json",
     "test": "node --import ./test/register.mjs --experimental-strip-types --no-warnings --test lib/*.test.ts test/*.test.ts scripts/*.test.mjs",
-    "verify:chain": "node scripts/verify-chain.mjs",
-    "verify:pool": "node scripts/verify-pool.mjs",
-    "discover:pools": "node scripts/discover-pools.mjs",
-    "db:migrate": "node --env-file=.env.local scripts/migrate.mjs"
+    "verify:chain": "node --env-file=.env.local scripts/verify-chain.mjs",
+    "verify:pool": "node --env-file=.env.local scripts/verify-pool.mjs",
+    "discover:pools": "node --env-file=.env.local scripts/discover-pools.mjs",
+    "simulate:router": "node --env-file=.env.local scripts/simulate-router-v4.mjs",
+    "db:migrate": "node --env-file=.env.local scripts/migrate.mjs",
+    "verify:quote": "node --env-file=.env.local scripts/verify-dual-rpc-quote.mjs"
   },
   "dependencies": {
     "@vetto/asset-registry": "workspace:*",
