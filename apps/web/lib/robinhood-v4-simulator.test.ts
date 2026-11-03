@@ -40,17 +40,25 @@ const quoteAbi = [{
   ],
 }] as const;
 
-const quoteData = encodeFunctionResult({
-  abi: quoteAbi,
-  functionName: "quoteExactInputSingle",
-  result: [2000n, 500n],
-});
+function makeQuoteData(
+  amountOut = 2_000n,
+  gasEstimate = 500n,
+) {
+  return encodeFunctionResult({
+    abi: quoteAbi,
+    functionName: "quoteExactInputSingle",
+    result: [amountOut, gasEstimate],
+  });
+}
 
 const originalRpc = process.env.ROBINHOOD_RPC_URL_PRIMARY;
+const originalSecondaryRpc = process.env.ROBINHOOD_RPC_URL_SECONDARY;
 const originalUsdg = process.env.ROBINHOOD_USDG_ADDRESS;
 
 beforeEach(() => {
   process.env.ROBINHOOD_RPC_URL_PRIMARY = "https://rpc.example.test";
+  process.env.ROBINHOOD_RPC_URL_SECONDARY =
+    "https://secondary.example.test";
   process.env.ROBINHOOD_USDG_ADDRESS = USDG;
 });
 
@@ -59,6 +67,12 @@ afterEach(() => {
     delete process.env.ROBINHOOD_RPC_URL_PRIMARY;
   } else {
     process.env.ROBINHOOD_RPC_URL_PRIMARY = originalRpc;
+  }
+
+  if (originalSecondaryRpc === undefined) {
+    delete process.env.ROBINHOOD_RPC_URL_SECONDARY;
+  } else {
+    process.env.ROBINHOOD_RPC_URL_SECONDARY = originalSecondaryRpc;
   }
 
   if (originalUsdg === undefined) {
@@ -77,61 +91,93 @@ function makeDependencies(options: {
   estimatedGas?: bigint;
   estimateGasFails?: boolean;
   routerReverts?: boolean;
+  secondaryQuoteOut?: bigint;
+  secondaryQuoteGas?: bigint;
+  secondaryBlockHash?: string;
+  secondaryBytecode?: string;
+  secondaryChainId?: number;
 } = {}): SimulationDependencies {
-  const client = {
-    getChainId: async () => 4663,
-    getBytecode: async () => "0x6000",
-    getGasPrice: async () => 2n,
-    getBalance: async () => options.nativeBalance ?? 100_000n,
+  function makeClient(isSecondary: boolean) {
+    const quoteData = makeQuoteData(
+      isSecondary
+        ? options.secondaryQuoteOut ?? 2_000n
+        : 2_000n,
+      isSecondary
+        ? options.secondaryQuoteGas ?? 500n
+        : 500n,
+    );
 
-    readContract: async ({
-      address,
-      functionName,
-    }: {
-      address: string;
-      functionName: string;
-    }) => {
-      if (address.toLowerCase() === USDG.toLowerCase()) {
-        if (functionName === "balanceOf") {
-          return options.tokenBalance ?? 2_000n;
+    return {
+      getChainId: async () =>
+        isSecondary ? options.secondaryChainId ?? 4663 : 4663,
+
+      getBytecode: async () =>
+        isSecondary
+          ? options.secondaryBytecode ?? "0x6000"
+          : "0x6000",
+
+      getGasPrice: async () => 2n,
+
+      getBalance: async () => options.nativeBalance ?? 100_000n,
+
+      getBlockNumber: async () => isSecondary ? 99n : 100n,
+
+      getBlock: async () => ({
+        hash: isSecondary
+          ? options.secondaryBlockHash ?? `0x${"11".repeat(32)}`
+          : `0x${"11".repeat(32)}`,
+      }),
+
+      readContract: async ({
+        address,
+        functionName,
+      }: {
+        address: string;
+        functionName: string;
+      }) => {
+        if (address.toLowerCase() === USDG.toLowerCase()) {
+          if (functionName === "balanceOf") {
+            return options.tokenBalance ?? 2_000n;
+          }
+
+          if (functionName === "allowance") {
+            return options.tokenAllowance ?? 2_000n;
+          }
         }
 
-        if (functionName === "allowance") {
-          return options.tokenAllowance ?? 2_000n;
+        return [
+          options.permitAmount ?? 2_000n,
+          options.permitExpiration ?? NOW_SECONDS + 10_000n,
+          0n,
+        ];
+      },
+
+      call: async ({ to }: { to?: string }) => {
+        if (to?.toLowerCase() === QUOTER.toLowerCase()) {
+          return { data: quoteData };
         }
-      }
 
-      return [
-        options.permitAmount ?? 2_000n,
-        options.permitExpiration ?? NOW_SECONDS + 10_000n,
-        0n,
-      ];
-    },
+        if (options.routerReverts) {
+          throw new Error("Mock Router revert");
+        }
 
-    call: async ({ to }: { to?: string }) => {
-      if (to?.toLowerCase() === QUOTER.toLowerCase()) {
-        return { data: quoteData };
-      }
+        return { data: "0x" };
+      },
 
-      if (options.routerReverts) {
-        throw new Error("Mock Router revert");
-      }
+      estimateGas: async () => {
+        if (options.estimateGasFails) {
+          throw new Error("Mock gas estimation failure");
+        }
 
-      return { data: "0x" };
-    },
-
-    estimateGas: async () => {
-      if (options.estimateGasFails) {
-        throw new Error("Mock gas estimation failure");
-      }
-
-      return options.estimatedGas ?? 100n;
-    },
-  };
+        return options.estimatedGas ?? 100n;
+      },
+    };
+  }
 
   return {
     now: () => NOW_MS,
-    createClient: () => client as never,
+    createClient: (rpc: string) =>
+      makeClient(rpc.includes("secondary")) as never,
   };
 }
 
@@ -147,7 +193,7 @@ function makeInput(tokenIn: string, tokenOut: string) {
   };
 }
 
-test("simulates ETH to USDG using Router gas estimation", async () => {
+test("simulates ETH to USDG using consistent dual RPC quotes", async () => {
   const result = await simulateRobinhoodV4Swap(
     makeInput("ETH", "USDG"),
     makeDependencies(),
@@ -157,6 +203,8 @@ test("simulates ETH to USDG using Router gas estimation", async () => {
   assert.equal(result.estimatedGas, "100");
   assert.equal(result.expectedOutBaseUnits, "2000");
   assert.equal(result.minOutBaseUnits, "1990");
+  assert.equal(result.quoteBlockNumber, "99");
+  assert.equal(result.quoteBlockHash, `0x${"11".repeat(32)}`);
   assert.equal(result.broadcast, false);
 });
 
@@ -180,7 +228,7 @@ test("rejects ETH swap when native balance cannot cover amount and gas buffer", 
   assert.equal(result.status, "failed");
   assert.equal(
     result.reason,
-    "Insufficient ETH balance for swap amount and gas buffer."
+    "Insufficient ETH balance for swap amount and gas buffer.",
   );
   assert.equal(result.broadcast, false);
 });
@@ -219,4 +267,56 @@ test("rejects USDG swap when native balance cannot cover gas buffer", async () =
     "Insufficient ETH balance for swap amount and gas buffer.",
   );
   assert.equal(result.broadcast, false);
+});
+
+test("rejects simulation when RPC block hashes do not match", async () => {
+  await assert.rejects(
+    simulateRobinhoodV4Swap(
+      makeInput("ETH", "USDG"),
+      makeDependencies({
+        secondaryBlockHash: `0x${"22".repeat(32)}`,
+      }),
+    ),
+    /block hash mismatch/i,
+  );
+});
+
+test("rejects simulation when RPC quote amounts do not match", async () => {
+  await assert.rejects(
+    simulateRobinhoodV4Swap(
+      makeInput("ETH", "USDG"),
+      makeDependencies({ secondaryQuoteOut: 1_999n }),
+    ),
+    /quote mismatch/i,
+  );
+});
+
+test("rejects simulation when RPC quote gas estimates do not match", async () => {
+  await assert.rejects(
+    simulateRobinhoodV4Swap(
+      makeInput("ETH", "USDG"),
+      makeDependencies({ secondaryQuoteGas: 501n }),
+    ),
+    /quote mismatch/i,
+  );
+});
+
+test("rejects simulation when contract bytecode does not match", async () => {
+  await assert.rejects(
+    simulateRobinhoodV4Swap(
+      makeInput("ETH", "USDG"),
+      makeDependencies({ secondaryBytecode: "0x6001" }),
+    ),
+    /bytecode mismatch/i,
+  );
+});
+
+test("rejects simulation when secondary RPC is on another chain", async () => {
+  await assert.rejects(
+    simulateRobinhoodV4Swap(
+      makeInput("ETH", "USDG"),
+      makeDependencies({ secondaryChainId: 1 }),
+    ),
+    /not on Robinhood Chain/i,
+  );
 });

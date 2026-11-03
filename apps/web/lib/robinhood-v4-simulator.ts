@@ -1,4 +1,3 @@
-
 import {
   createPublicClient,
   decodeFunctionResult,
@@ -14,9 +13,12 @@ import {
 
 const CHAIN_ID = 4663;
 const ROUTER = getAddress("0x204FAca1764B154221e35c0d20aBb3c525710498");
-const QUOTER = getAddress("0x8dc178efb8111bb0973dd9d722ebeff267c98f94");
+const QUOTER = getAddress("0x8dc178efb8111bb0973dd9d722ebeFF267c98f94");
 const USDG = getAddress("0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168");
 const PERMIT2 = getAddress("0x000000000022D473030F116dDEE9F6B43aC78BA3");
+
+const ZERO_ADDRESS =
+  "0x0000000000000000000000000000000000000000" as Address;
 
 const erc20Abi = [{
   type: "function",
@@ -108,8 +110,58 @@ export interface SimulationResult {
   expectedOutBaseUnits?: string;
   minOutBaseUnits?: string;
   estimatedGas?: string;
+  quoteBlockNumber?: string;
+  quoteBlockHash?: string;
   reason?: string;
   broadcast: false;
+}
+
+function validateRpcUrl(value: string, label: string): URL {
+  let url: URL;
+
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`${label} RPC URL is invalid.`);
+  }
+
+  if (
+    url.protocol !== "https:"
+    && !(url.protocol === "http:" && [
+      "localhost",
+      "127.0.0.1",
+      "[::1]",
+    ].includes(url.hostname))
+  ) {
+    throw new Error(`${label} RPC must use HTTPS.`);
+  }
+
+  if (url.username || url.password) {
+    throw new Error(`${label} RPC URL must not contain credentials.`);
+  }
+
+  return url;
+}
+
+function decodeQuote(data: `0x${string}` | undefined) {
+  if (!data || data === "0x") {
+    throw new Error("Quoter returned empty data.");
+  }
+
+  const result = decodeFunctionResult({
+    abi: quoterAbi,
+    functionName: "quoteExactInputSingle",
+    data,
+  });
+
+  if (result[0] <= 0n || result[1] <= 0n) {
+    throw new Error("Quoter returned an invalid result.");
+  }
+
+  return {
+    expectedOut: result[0],
+    gasEstimate: result[1],
+  };
 }
 
 export async function simulateRobinhoodV4Swap(
@@ -149,20 +201,27 @@ export async function simulateRobinhoodV4Swap(
     throw new Error("Only ETH/USDG swaps are supported.");
   }
 
-  const rpc = process.env.ROBINHOOD_RPC_URL_PRIMARY;
+  const primaryRpc = process.env.ROBINHOOD_RPC_URL_PRIMARY;
+  const secondaryRpc = process.env.ROBINHOOD_RPC_URL_SECONDARY;
   const configuredUsdg = process.env.ROBINHOOD_USDG_ADDRESS;
 
-  if (
-    !rpc
-    || !configuredUsdg
-    || getAddress(configuredUsdg) !== USDG
-  ) {
+  if (!primaryRpc || !secondaryRpc || !configuredUsdg) {
     throw new Error(
-      "Robinhood RPC or verified USDG configuration is missing.",
+      "Primary RPC, secondary RPC, or verified USDG configuration is missing.",
     );
   }
 
-  // Use the injected clock for deterministic tests.
+  if (getAddress(configuredUsdg) !== USDG) {
+    throw new Error("Configured USDG address does not match verified USDG.");
+  }
+
+  const primaryUrl = validateRpcUrl(primaryRpc, "Primary");
+  const secondaryUrl = validateRpcUrl(secondaryRpc, "Secondary");
+
+  if (primaryUrl.origin === secondaryUrl.origin) {
+    throw new Error("Primary and secondary RPC must use different origins.");
+  }
+
   const nowMs = dependencies.now?.() ?? Date.now();
   const nowSeconds = BigInt(Math.floor(nowMs / 1000));
 
@@ -176,36 +235,82 @@ export async function simulateRobinhoodV4Swap(
         }),
       }));
 
-  const client = createClient(rpc);
+  const primary = createClient(primaryRpc);
+  const secondary = createClient(secondaryRpc);
 
-  const chainId = await client.getChainId();
-
-  if (chainId !== CHAIN_ID) {
-    throw new Error("RPC is not connected to Robinhood Chain.");
-  }
-
-  const [routerCode, quoterCode, permit2Code] = await Promise.all([
-    client.getBytecode({ address: ROUTER }),
-    client.getBytecode({ address: QUOTER }),
-    client.getBytecode({ address: PERMIT2 }),
+  const [primaryChainId, secondaryChainId] = await Promise.all([
+    primary.getChainId(),
+    secondary.getChainId(),
   ]);
 
   if (
-    !routerCode || routerCode === "0x"
-    || !quoterCode || quoterCode === "0x"
-    || !permit2Code || permit2Code === "0x"
+    primaryChainId !== CHAIN_ID
+    || secondaryChainId !== CHAIN_ID
   ) {
-    throw new Error(
-      "Required router, quoter, or Permit2 contract is unavailable.",
-    );
+    throw new Error("One or both RPC providers are not on Robinhood Chain.");
+  }
+
+  const [primaryHead, secondaryHead] = await Promise.all([
+    primary.getBlockNumber(),
+    secondary.getBlockNumber(),
+  ]);
+
+  const commonBlock = primaryHead < secondaryHead
+    ? primaryHead
+    : secondaryHead;
+
+  const [primaryBlock, secondaryBlock] = await Promise.all([
+    primary.getBlock({ blockNumber: commonBlock }),
+    secondary.getBlock({ blockNumber: commonBlock }),
+  ]);
+
+  if (
+    !primaryBlock.hash
+    || !secondaryBlock.hash
+    || primaryBlock.hash.toLowerCase() !== secondaryBlock.hash.toLowerCase()
+  ) {
+    throw new Error("RPC block hash mismatch at common block.");
+  }
+
+  const [primaryCodes, secondaryCodes] = await Promise.all([
+    Promise.all([
+      primary.getBytecode({ address: ROUTER, blockNumber: commonBlock }),
+      primary.getBytecode({ address: QUOTER, blockNumber: commonBlock }),
+      primary.getBytecode({ address: PERMIT2, blockNumber: commonBlock }),
+      primary.getBytecode({ address: USDG, blockNumber: commonBlock }),
+    ]),
+    Promise.all([
+      secondary.getBytecode({ address: ROUTER, blockNumber: commonBlock }),
+      secondary.getBytecode({ address: QUOTER, blockNumber: commonBlock }),
+      secondary.getBytecode({ address: PERMIT2, blockNumber: commonBlock }),
+      secondary.getBytecode({ address: USDG, blockNumber: commonBlock }),
+    ]),
+  ]);
+
+  const contractNames = ["Router", "Quoter", "Permit2", "USDG"];
+
+  for (let index = 0; index < contractNames.length; index += 1) {
+    const primaryCode = primaryCodes[index];
+    const secondaryCode = secondaryCodes[index];
+
+    if (
+      !primaryCode || primaryCode === "0x"
+      || !secondaryCode || secondaryCode === "0x"
+    ) {
+      throw new Error(`${contractNames[index]} bytecode is unavailable.`);
+    }
+
+    if (primaryCode.toLowerCase() !== secondaryCode.toLowerCase()) {
+      throw new Error(`${contractNames[index]} bytecode mismatch between RPCs.`);
+    }
   }
 
   const poolKey = {
-    currency0: "0x0000000000000000000000000000000000000000" as Address,
+    currency0: ZERO_ADDRESS,
     currency1: USDG,
     fee: 500,
     tickSpacing: 10,
-    hooks: "0x0000000000000000000000000000000000000000" as Address,
+    hooks: ZERO_ADDRESS,
   };
 
   const quoteData = encodeFunctionData({
@@ -219,90 +324,98 @@ export async function simulateRobinhoodV4Swap(
     }],
   });
 
-  const [quoteCall, gasPrice, nativeBalance, tokenBalance] =
-    await Promise.all([
-      client.call({
-        to: QUOTER,
-        data: quoteData,
-      }),
-      client.getGasPrice(),
-      client.getBalance({ address: wallet }),
-      zeroForOne
-        ? Promise.resolve(0n)
-        : client.readContract({
-            address: USDG,
-            abi: erc20Abi,
-            functionName: "balanceOf",
-            args: [wallet],
-          }),
-    ]);
+  const [primaryQuoteCall, secondaryQuoteCall] = await Promise.all([
+    primary.call({
+      to: QUOTER,
+      data: quoteData,
+      blockNumber: commonBlock,
+    }),
+    secondary.call({
+      to: QUOTER,
+      data: quoteData,
+      blockNumber: commonBlock,
+    }),
+  ]);
+
+  const primaryQuote = decodeQuote(primaryQuoteCall.data);
+  const secondaryQuote = decodeQuote(secondaryQuoteCall.data);
+
+  if (
+    primaryQuote.expectedOut !== secondaryQuote.expectedOut
+    || primaryQuote.gasEstimate !== secondaryQuote.gasEstimate
+  ) {
+    throw new Error("RPC quote mismatch. Simulation stopped for safety.");
+  }
+
+  const expectedOut = primaryQuote.expectedOut;
+  const minOut =
+    expectedOut * BigInt(10000 - input.slippageBps) / 10000n;
+
+  const [gasPrice, nativeBalance, tokenBalance] = await Promise.all([
+    primary.getGasPrice(),
+    primary.getBalance({
+      address: wallet,
+      blockNumber: commonBlock,
+    }),
+    zeroForOne
+      ? Promise.resolve(0n)
+      : primary.readContract({
+          address: USDG,
+          abi: erc20Abi,
+          functionName: "balanceOf",
+          args: [wallet],
+          blockNumber: commonBlock,
+        }),
+  ]);
 
   const inputBalance = zeroForOne
     ? nativeBalance
     : tokenBalance;
 
-  if (!quoteCall.data) {
-    throw new Error("Quoter returned empty data.");
-  }
-
-  const quote = decodeFunctionResult({
-    abi: quoterAbi,
-    functionName: "quoteExactInputSingle",
-    data: quoteCall.data,
-  });
-
-  const expectedOut = quote[0];
-
-  if (expectedOut <= 0n) {
-    throw new Error("Quoter returned an invalid result.");
-  }
-
-  const minOut =
-    expectedOut * BigInt(10000 - input.slippageBps) / 10000n;
+  const baseResult = {
+    chainId: CHAIN_ID,
+    wallet,
+    tokenIn,
+    tokenOut,
+    amountInBaseUnits: amountIn.toString(),
+    expectedOutBaseUnits: expectedOut.toString(),
+    minOutBaseUnits: minOut.toString(),
+    quoteBlockNumber: commonBlock.toString(),
+    quoteBlockHash: primaryBlock.hash,
+    broadcast: false as const,
+  };
 
   if (inputBalance < amountIn) {
     return {
+      ...baseResult,
       status: "failed",
-      chainId,
-      wallet,
-      tokenIn,
-      tokenOut,
-      amountInBaseUnits: amountIn.toString(),
-      expectedOutBaseUnits: expectedOut.toString(),
-      minOutBaseUnits: minOut.toString(),
       reason: "Insufficient input-token balance.",
-      broadcast: false,
     };
   }
 
   if (!zeroForOne) {
     const [tokenAllowance, permitAllowance] = await Promise.all([
-      client.readContract({
+      primary.readContract({
         address: USDG,
         abi: allowanceAbi,
         functionName: "allowance",
         args: [wallet, PERMIT2],
+        blockNumber: commonBlock,
       }),
-      client.readContract({
+      primary.readContract({
         address: PERMIT2,
         abi: permit2Abi,
         functionName: "allowance",
         args: [wallet, USDG, ROUTER],
+        blockNumber: commonBlock,
       }),
     ]);
 
     if (tokenAllowance < amountIn) {
       return {
+        ...baseResult,
         status: "failed",
-        chainId,
-        wallet,
-        tokenIn,
-        tokenOut,
-        amountInBaseUnits: amountIn.toString(),
-        expectedOutBaseUnits: expectedOut.toString(),
-        minOutBaseUnits: minOut.toString(),
         reason: "USDG allowance to Permit2 is insufficient.",
-        broadcast: false,
       };
     }
 
@@ -311,16 +424,9 @@ export async function simulateRobinhoodV4Swap(
       || permitAllowance[1] <= nowSeconds
     ) {
       return {
+        ...baseResult,
         status: "failed",
-        chainId,
-        wallet,
-        tokenIn,
-        tokenOut,
-        amountInBaseUnits: amountIn.toString(),
-        expectedOutBaseUnits: expectedOut.toString(),
-        minOutBaseUnits: minOut.toString(),
         reason: "Permit2 allowance is insufficient or expired.",
-        broadcast: false,
       };
     }
   }
@@ -338,39 +444,27 @@ export async function simulateRobinhoodV4Swap(
   let estimatedGas: bigint;
 
   try {
-    estimatedGas = await client.estimateGas({
+    estimatedGas = await primary.estimateGas({
       account: wallet,
       to: ROUTER,
       data: tx.data,
       value: tx.value,
+      blockNumber: commonBlock,
     });
   } catch {
     return {
+      ...baseResult,
       status: "failed",
-      chainId,
-      wallet,
-      tokenIn,
-      tokenOut,
-      amountInBaseUnits: amountIn.toString(),
-      expectedOutBaseUnits: expectedOut.toString(),
-      minOutBaseUnits: minOut.toString(),
       reason: "Router gas estimation failed.",
-      broadcast: false,
     };
   }
 
   if (estimatedGas <= 0n || gasPrice <= 0n) {
     return {
+      ...baseResult,
       status: "failed",
-      chainId,
-      wallet,
-      tokenIn,
-      tokenOut,
-      amountInBaseUnits: amountIn.toString(),
-      expectedOutBaseUnits: expectedOut.toString(),
-      minOutBaseUnits: minOut.toString(),
+      estimatedGas: estimatedGas.toString(),
       reason: "Invalid Router gas estimate or gas price.",
-      broadcast: false,
     };
   }
 
@@ -383,53 +477,33 @@ export async function simulateRobinhoodV4Swap(
 
   if (nativeBalance < requiredNativeBalance) {
     return {
+      ...baseResult,
       status: "failed",
-      chainId,
-      wallet,
-      tokenIn,
-      tokenOut,
-      amountInBaseUnits: amountIn.toString(),
-      expectedOutBaseUnits: expectedOut.toString(),
-      minOutBaseUnits: minOut.toString(),
       estimatedGas: estimatedGas.toString(),
       reason: "Insufficient ETH balance for swap amount and gas buffer.",
-      broadcast: false,
     };
   }
 
   try {
-    await client.call({
+    await primary.call({
       account: wallet,
       to: ROUTER,
       data: tx.data,
       value: tx.value,
+      blockNumber: commonBlock,
     });
 
     return {
+      ...baseResult,
       status: "passed",
-      chainId,
-      wallet,
-      tokenIn,
-      tokenOut,
-      amountInBaseUnits: amountIn.toString(),
-      expectedOutBaseUnits: expectedOut.toString(),
-      minOutBaseUnits: minOut.toString(),
       estimatedGas: estimatedGas.toString(),
-      broadcast: false,
     };
   } catch {
     return {
+      ...baseResult,
       status: "failed",
-      chainId,
-      wallet,
-      tokenIn,
-      tokenOut,
-      amountInBaseUnits: amountIn.toString(),
-      expectedOutBaseUnits: expectedOut.toString(),
-      minOutBaseUnits: minOut.toString(),
       estimatedGas: estimatedGas.toString(),
       reason: "Router eth_call simulation reverted.",
-      broadcast: false,
     };
   }
 }
