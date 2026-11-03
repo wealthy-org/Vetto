@@ -108,3 +108,63 @@ test("a timed-out adapter does not block quote collection", async () => {
   ]);
   assert.ok(elapsed < 1000, `Collection took ${elapsed}ms`);
 });
+
+
+test("rejects invalid price impact and latency metrics", () => {
+  const invalidQuotes = [
+    q({ quoteId: "negative-impact", priceImpactBps: -1 }),
+    q({ quoteId: "huge-impact", priceImpactBps: 10001 }),
+    q({ quoteId: "fractional-impact", priceImpactBps: 10.5 }),
+    q({ quoteId: "nan-impact", priceImpactBps: Number.NaN }),
+    q({ quoteId: "negative-latency", latencyMs: -1 }),
+    q({ quoteId: "huge-latency", latencyMs: 120001 }),
+    q({ quoteId: "fractional-latency", latencyMs: 1.5 }),
+  ];
+
+  assert.equal(rankQuotes(invalidQuotes, req, NOW).length, 0);
+});
+
+test("rejects oversized numeric fields", () => {
+  const invalid = q({
+    quoteId: "oversized",
+    expectedOutBaseUnits: "9".repeat(79),
+  });
+
+  assert.equal(rankQuotes([invalid], req, NOW).length, 0);
+});
+
+test("caps route count and rejects invalid limits", () => {
+  const many = Array.from(
+    { length: 8 },
+    (_, i) => q({
+      quoteId: `limit-${i}`,
+      expectedOutBaseUnits: String(1000 + i),
+    }),
+  );
+
+  assert.equal(rankQuotes(many, req, NOW, 5).length, 5);
+  assert.equal(rankQuotes(many, req, NOW, 100).length, 5);
+  assert.equal(rankQuotes(many, req, NOW, -1).length, 0);
+  assert.equal(rankQuotes(many, req, NOW, 1.5).length, 0);
+});
+
+test("private requests accept only verified private quotes", () => {
+  const privateReq = { ...req, privateRequested: true };
+
+  const publicQuote = q({ quoteId: "public" });
+  const privateQuote = q({
+    quoteId: "private",
+    routeType: "private",
+    verifiedPrivacyRelay: true,
+  });
+
+  assert.equal(
+    rankQuotes([publicQuote], privateReq, NOW, 5, true).length,
+    0,
+  );
+
+  assert.equal(
+    rankQuotes([privateQuote], privateReq, NOW, 5, true).length,
+    1,
+  );
+});
