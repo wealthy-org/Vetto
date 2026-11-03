@@ -170,7 +170,7 @@ test("follow-up uses validated pending swap and last-pair context", async () => 
   assert.equal(invalid.intent.kind, "chat");
 });
 
-test("POST /api/intent uses optional OpenAI-compatible parser and validates its output", async () => {
+test("POST /api/intent prevents LLM from inventing swap parameters", async () => {
   const previous = {
     key: process.env.LLM_API_KEY,
     url: process.env.LLM_API_URL,
@@ -203,25 +203,24 @@ test("POST /api/intent uses optional OpenAI-compatible parser and validates its 
     });
 
   try {
-    const body = await j(
-      await intent(
-        post("/api/intent", {
-          text: "ubah eth saya ke USDG",
-          context: {
-            lastUrl: "https://previous-site.example/",
-          },
-        })
-      )
+    const response = await intent(
+      post("/api/intent", {
+        text: "ubah eth saya ke USDG",
+        context: {
+          lastUrl: "https://previous-site.example/",
+        },
+      })
     );
 
-    assert.deepEqual(body.intent, {
-      kind: "swap",
-      chainId: 4663,
-      tokenIn: "ETH",
-      tokenOut: "USDG",
-      amountIn: "0.5",
-      privateRequested: false,
-    });
+    const body = await j(response);
+
+    assert.equal(response.status, 200);
+    assert.equal(body.intent.kind, "clarification");
+
+    assert.match(
+      body.intent.question,
+      /specify the amount and token pair explicitly/i
+    );
   } finally {
     globalThis.fetch = originalFetch;
 
@@ -452,13 +451,14 @@ test("POST /api/quotes: wrong chain, non-swap, raw address from an LLM, unknown 
     400
   );
 
+  // Unknown registry symbols are rejected by validateIntent before quote lookup.
   assert.equal(
     (
       await quotes(
         post("/api/quotes", swap({ tokenOut: "PEPE" }))
       )
     ).status,
-    422
+    400
   );
 });
 
