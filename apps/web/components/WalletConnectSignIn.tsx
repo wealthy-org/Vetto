@@ -2,7 +2,10 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { isWalletAuthChainId, WALLET_AUTH_CHAIN_IDS } from "@/lib/auth-constants";
+import {
+  isWalletAuthChainId,
+  WALLET_AUTH_CHAIN_ID,
+} from "@/lib/auth-constants";
 import { StatusChip } from "./StatusChip";
 import { IconLock } from "./icons";
 
@@ -37,6 +40,8 @@ export function WalletConnectSignIn({ mode }: { mode: "sign-in" | "sign-up" }) {
   const [progress, setProgress] = useState("");
 
   async function signIn() {
+    console.log("VETTO SIGN IN BUTTON CLICKED");
+
     if (!PROJECT_ID || busy) return;
     setBusy(true);
     setError("");
@@ -47,7 +52,7 @@ export function WalletConnectSignIn({ mode }: { mode: "sign-in" | "sign-up" }) {
       setProgress("Connecting to WalletConnect relay…");
       const provider = await EthereumProvider.init({
         projectId: PROJECT_ID,
-        optionalChains: [...WALLET_AUTH_CHAIN_IDS],
+        chains: [WALLET_AUTH_CHAIN_ID],
         showQrModal: true,
         methods: ["personal_sign", "eth_requestAccounts"],
         events: ["accountsChanged", "chainChanged"],
@@ -59,17 +64,34 @@ export function WalletConnectSignIn({ mode }: { mode: "sign-in" | "sign-up" }) {
         },
       });
 
+      console.info("[VETTO] WalletConnect initialized");
+
+      provider.on("display_uri", (uri) => {
+        console.info("[VETTO] DISPLAY URI:", uri);
+        setProgress("QR connection is ready. Scan it with your wallet.");
+      });
+
+      provider.on("connect", (data) => {
+        console.info("[VETTO] CONNECT:", data);
+      });
+
+      provider.on("disconnect", (error) => {
+        console.error("[VETTO] DISCONNECT:", error);
+      });
+
       setProgress("Opening the wallet connection…");
       provider.on("display_uri", () => {
         setProgress("QR connection is ready. Scan it with your wallet.");
       });
+      console.info("[VETTO] Calling provider.enable()");
       const accounts = await provider.enable();
+      console.info("[VETTO] Accounts received:", accounts);
       setProgress("Wallet connected. Requesting the one-time login message…");
       const address = accounts[0];
       if (!address) throw new Error("No wallet account was shared.");
 
-      if (!isWalletAuthChainId(provider.chainId)) {
-        throw new Error("Switch to Ethereum Mainnet or Robinhood Chain to sign in.");
+      if (provider.chainId !== WALLET_AUTH_CHAIN_ID) {
+        throw new Error("Please connect using Ethereum Mainnet.");
       }
 
       const challenge = await postJson<{ challengeId: string; message: string }>("/api/auth/challenge", {
@@ -115,7 +137,7 @@ export function WalletConnectSignIn({ mode }: { mode: "sign-in" | "sign-up" }) {
       {busy && <p role="status" className="mt-2 text-xs text-white/55">{progress}</p>}
       {error && <p role="alert" className="mt-2 text-xs text-peach">{error}</p>}
       {!configured && <p className="mt-2 text-xs text-white/40">WalletConnect is not configured. Add its public project ID to the web app environment.</p>}
-      {configured && <p className="mt-2 text-xs text-white/40">Sign-in supports Ethereum Mainnet and Robinhood Chain. The message creates a session only; no transaction is requested.</p>}
+      {configured && <p className="mt-2 text-xs text-white/40">Sign-in uses Ethereum Mainnet. Robinhood Chain is handled separately for VETTO transactions.</p>}
     </div>
   );
 }
