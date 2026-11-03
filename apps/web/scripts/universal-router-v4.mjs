@@ -42,17 +42,19 @@ const exactInputSingleType = {
   ],
 };
 
-const routerAbi = [{
-  type: "function",
-  name: "execute",
-  stateMutability: "payable",
-  inputs: [
-    { name: "commands", type: "bytes" },
-    { name: "inputs", type: "bytes[]" },
-    { name: "deadline", type: "uint256" },
-  ],
-  outputs: [],
-}];
+const routerAbi = [
+  {
+    type: "function",
+    name: "execute",
+    stateMutability: "payable",
+    inputs: [
+      { name: "commands", type: "bytes" },
+      { name: "inputs", type: "bytes[]" },
+      { name: "deadline", type: "uint256" },
+    ],
+    outputs: [],
+  },
+];
 
 export function calculateMinOut(expectedOut, slippageBps = 50n) {
   const output = BigInt(expectedOut);
@@ -80,14 +82,21 @@ export function buildUniversalRouterV4Swap({
   amountIn,
   minOut,
   deadline,
+  nowSeconds = BigInt(Math.floor(Date.now() / 1000)),
 }) {
   if (typeof zeroForOne !== "boolean") {
     throw new Error("zeroForOne must be boolean.");
   }
 
+  const expiry = BigInt(deadline);
+  const now = BigInt(nowSeconds);
+
+  if (expiry <= now) {
+    throw new Error("deadline must be in the future.");
+  }
+
   const input = BigInt(amountIn);
   const minimumOutput = BigInt(minOut);
-  const expiry = BigInt(deadline);
 
   if (input <= 0n || input >= 2n ** 128n) {
     throw new Error("amountIn must fit uint128 and be positive.");
@@ -97,23 +106,21 @@ export function buildUniversalRouterV4Swap({
     throw new Error("minOut must fit uint128 and be positive.");
   }
 
-  if (expiry <= 0n) {
-    throw new Error("deadline must be positive.");
-  }
-
   const currencyIn = zeroForOne ? ZERO : USDG;
   const currencyOut = zeroForOne ? USDG : ZERO;
 
   const swapParams = encodeAbiParameters(
     [exactInputSingleType],
-    [{
-      poolKey,
-      zeroForOne,
-      amountIn: input,
-      amountOutMinimum: minimumOutput,
-      minHopPriceX36: 0n,
-      hookData: "0x",
-    }],
+    [
+      {
+        poolKey,
+        zeroForOne,
+        amountIn: input,
+        amountOutMinimum: minimumOutput,
+        minHopPriceX36: 0n,
+        hookData: "0x",
+      },
+    ],
   );
 
   const settleParams = encodeAbiParameters(
