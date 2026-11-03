@@ -33,6 +33,29 @@ test("ranks by net output and filters expired / non-executable / mismatched / in
   assert.deepEqual(ids, ["good", "worse", "fee"]);
 });
 
+test("non-executable quotes can be displayed but are rejected by default ranking", async () => {
+  const displayOnly = q({
+    quoteId: "display-only",
+    isExecutable: false,
+  });
+
+  assert.equal(rankQuotes([displayOnly], req, NOW).length, 0);
+
+  const displayed = rankQuotes([displayOnly], req, NOW, 5, true);
+  assert.equal(displayed.length, 1);
+  assert.equal(displayed[0]?.isExecutable, false);
+
+  const collected = await collectQuotes(
+    req,
+    [adapter("verified", [displayOnly])],
+    { now: NOW },
+  );
+
+  assert.equal(collected.routes.length, 1);
+  assert.equal(collected.routes[0]?.isExecutable, false);
+  assert.match(collected.message, /execution is not enabled/i);
+});
+
 test("caps at five routes", () => {
   const many = Array.from({ length: 8 }, (_, i) => q({ quoteId: `r${i}`, expectedOutBaseUnits: String(1000 + i) }));
   assert.equal(rankQuotes(many, req, NOW).length, 5);

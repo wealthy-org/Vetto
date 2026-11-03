@@ -10,12 +10,19 @@ export function isValidQuote(
   allowNonExecutable = false,
 ): boolean {
   if (!q.isExecutable && !allowNonExecutable) return false;
+
   if (q.tokenIn !== req.tokenIn || q.tokenOut !== req.tokenOut) return false;
   if (q.amountInBaseUnits !== req.amountInBaseUnits) return false;
-  const expected = big(q.expectedOutBaseUnits), min = big(q.minOutBaseUnits);
-  const net = big(q.networkFeeEstimate), proto = big(q.protocolFeeEstimate);
+
+  const expected = big(q.expectedOutBaseUnits);
+  const min = big(q.minOutBaseUnits);
+  const net = big(q.networkFeeEstimate);
+  const proto = big(q.protocolFeeEstimate);
+
   if (expected === null || min === null || net === null || proto === null) return false;
-  if (min <= 0n || min > expected) return false;
+  if (expected <= 0n || min <= 0n || min > expected) return false;
+  if (net > expected || proto > expected - net) return false;
+
   const until = Date.parse(q.executableUntil);
   return Number.isFinite(until) && until > now;
 }
