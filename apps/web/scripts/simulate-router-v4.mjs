@@ -35,6 +35,9 @@ if (!walletArg || !isAddress(walletArg)) {
   );
 }
 
+const useEthStateOverride =
+  process.env.VETTO_SIMULATE_WITH_STATE_OVERRIDE === "1";
+
 const account = getAddress(walletArg);
 
 const client = createPublicClient({
@@ -293,7 +296,10 @@ async function simulate({ label, zeroForOne, amountIn }) {
         args: [account],
       });
 
-  if (inputBalance < amountIn) {
+  if (
+    inputBalance < amountIn &&
+    !(zeroForOne && useEthStateOverride)
+  ) {
     console.log("SKIPPED: Insufficient input-token balance.");
     return;
   }
@@ -333,11 +339,25 @@ async function simulate({ label, zeroForOne, amountIn }) {
   console.log("Quoter gas estimate:", gasEstimate.toString());
   console.log("Calldata length:", (tx.data.length - 2) / 2, "bytes");
 
+  if (zeroForOne && useEthStateOverride) {
+    console.log("Using temporary ETH balance override for eth_call only.");
+  }
+
   const result = await client.call({
     account,
     to: ROUTER,
     data: tx.data,
     value: tx.value,
+    ...(zeroForOne && useEthStateOverride
+      ? {
+          stateOverride: [
+            {
+              address: account,
+              balance: inputBalance + amountIn + parseEther("1"),
+            },
+          ],
+        }
+      : {}),
   });
 
   console.log("SIMULATION PASSED");
