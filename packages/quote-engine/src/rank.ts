@@ -9,7 +9,7 @@ export function isValidQuote(
   now: number,
   allowNonExecutable = false,
 ): boolean {
-  if (!q.isExecutable && !allowNonExecutable) return false;if (!q.isExecutable) return false;
+  if (!q.isExecutable && !allowNonExecutable) return false;
   if (q.tokenIn !== req.tokenIn || q.tokenOut !== req.tokenOut) return false;
   if (q.amountInBaseUnits !== req.amountInBaseUnits) return false;
   const expected = big(q.expectedOutBaseUnits), min = big(q.minOutBaseUnits);
