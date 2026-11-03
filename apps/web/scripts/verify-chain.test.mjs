@@ -46,9 +46,21 @@ function mockFetch({
           ? providerIndex === 1 && mismatchedCode ? "0x6002" : "0x6001"
           : "0x6003";
         break;
-      case "eth_call":
-        result = params[0].data === "0x95d89b41" ? encodedString(symbol) : decimals;
-        break;
+      case "eth_call": {
+      const data = params[0].data.toLowerCase();
+      const target = params[0].to.toLowerCase();
+
+      if (data === "0x95d89b41") {
+        result = target === TOKEN.toLowerCase()
+          ? encodedString(symbol)
+          : encodedString("WETH");
+      } else {
+        result = target === TOKEN.toLowerCase()
+          ? decimals
+          : "0x12";
+      }
+      break;
+    }
       default:
         throw new Error(`Unexpected RPC method ${method}`);
     }
@@ -306,12 +318,27 @@ function discoveryMockFetch({ disagree = false } = {}) {
     if (method === "eth_chainId") result = "0x1237";
     else if (method === "eth_blockNumber") result = "0xc8";
     else if (method === "eth_getLogs") {
-      result = logs.filter((log) => BigInt(log.blockNumber) >= BigInt(params[0].fromBlock)
-        && BigInt(log.blockNumber) <= BigInt(params[0].toBlock));
-      if (secondary && disagree && result.length > 0) {
-        result = result.map((log) => ({ ...log, data: `${log.data.slice(0, -1)}${log.data.endsWith("0") ? "1" : "0"}` }));
-      }
-    } else {
+    const filter = params[0];
+    const isEthUsdgFilter =
+      filter.topics?.[2]?.toLowerCase() ===
+        `0x${ZERO_ADDRESS.slice(2).toLowerCase().padStart(64, "0")}` &&
+      filter.topics?.[3]?.toLowerCase() ===
+        `0x${TOKEN.slice(2).toLowerCase().padStart(64, "0")}`;
+
+    result = isEthUsdgFilter
+      ? logs.filter((log) =>
+          BigInt(log.blockNumber) >= BigInt(filter.fromBlock) &&
+          BigInt(log.blockNumber) <= BigInt(filter.toBlock)
+        )
+      : [];
+
+    if (secondary && disagree && result.length > 0) {
+      result = result.map((log) => ({
+        ...log,
+        data: `${log.data.slice(0, -1)}${log.data.endsWith("0") ? "1" : "0"}`,
+      }));
+    }
+  } else {
       throw new Error(`Unexpected RPC method ${method}`);
     }
     return Response.json({ jsonrpc: "2.0", id: 1, result });
@@ -342,7 +369,7 @@ test("pool discovery rejects mismatched event logs between RPCs", async () => {
       toBlock: "115",
       fetchImpl: discoveryMockFetch({ disagree: true }),
     }),
-    /disagree on ETH\/USDG Initialize logs/,
+    /disagree on ETH\/USDG or WETH\/USDG Initialize logs/,
   );
 });
 

@@ -10,9 +10,22 @@ import {
 
 export const ROBINHOOD_CHAIN_ID = 4663n;
 // Listed in Uniswap's public deployment feed: https://developers.uniswap.org/deployments.json
-export const UNISWAP_V4_POOL_MANAGER = "0x8366a39CC670B4001A1121B8F6A443A643e40951";
+export const UNISWAP_V4_POOL_MANAGER = 
+  "0x8366a39CC670B4001A1121B8F6A443A643e40951";
+
 // Published in Uniswap/v4-periphery test/ReservesLens.fork.t.sol.
-export const UNISWAP_V4_STATE_VIEW = "0xF3334192D15450CdD385c8B70e03f9A6bD9E673b";
+export const UNISWAP_V4_STATE_VIEW = 
+"0xF3334192D15450CdD385c8B70e03f9A6bD9E673b";
+
+export const ROBINHOOD_WETH =
+  "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73";
+
+export const UNISWAP_V4_QUOTER =
+  "0x8dc178efb8111bb0973dd9d722ebeff267c98f94";
+
+export const UNISWAP_UNIVERSAL_ROUTER_V2_1_2 =
+  "0x204FAca1764B154221e35c0d20aBb3c525710498";
+
 const POOLS_SLOT = 6n;
 const LIQUIDITY_OFFSET = 3n;
 const EXTSLOAD_SELECTOR = toFunctionSelector("extsload(bytes32)");
@@ -47,41 +60,86 @@ function rpcQuantity(value, label) {
   return BigInt(value);
 }
 
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 async function rpcCall(url, method, params, fetchImpl) {
-  let response;
-  try {
-    response = await fetchImpl(url, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-      signal: AbortSignal.timeout(10_000),
-    });
-  } catch {
-    throw new Error(`RPC host ${url.host} could not be reached for ${method}.`);
+  const maxAttempts = method === "eth_getLogs" ? 6 : 3;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    let response;
+
+    try {
+      response = await fetchImpl(url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+        signal: AbortSignal.timeout(10_000),
+      });
+    } catch {
+      if (attempt === maxAttempts) {
+        throw new Error(`RPC host ${url.host} could not be reached for ${method}.`);
+      }
+
+      await sleep(Math.min(1_000 * 2 ** (attempt - 1), 10_000));
+      continue;
+    }
+
+    const rawText = await response.text();
+
+    let body;
+    try {
+      body = JSON.parse(rawText);
+    } catch {
+      if (!response.ok) {
+        body = null;
+      } else {
+        throw new Error(`RPC host ${url.host} returned invalid JSON for ${method}.`);
+      }
+    }
+
+    const rpcError = body?.error;
+    const errorMessage = String(rpcError?.message ?? "");
+    const retryable =
+      response.status === 429 ||
+      response.status === 408 ||
+      response.status === 503 ||
+      rpcError?.code === -32029 ||
+      /rate.?limit|too many requests/i.test(errorMessage);
+
+    if (!response.ok || rpcError) {
+      if (retryable && attempt < maxAttempts) {
+        const retryAfter = Number(rpcError?.data?.retry_after_ms);
+        const waitMs = Number.isFinite(retryAfter) && retryAfter > 0
+          ? Math.min(retryAfter, 120_000)
+          : Math.min(2_000 * 2 ** (attempt - 1), 30_000);
+
+        console.log(
+          `${url.host} rate limited on ${method}. Retry ${attempt + 1}/${maxAttempts} in ${waitMs} ms.`
+        );
+
+        await sleep(waitMs);
+        continue;
+      }
+
+      const detail = rawText.replace(/\s+/g, " ").trim().slice(0, 240);
+      throw new Error(
+        `RPC host ${url.host} returned HTTP ${response.status} for ${method}: ${detail}`
+      );
+    }
+
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      throw new Error(`RPC host ${url.host} returned an invalid JSON-RPC response for ${method}.`);
+    }
+
+    if (body.jsonrpc !== "2.0" || body.id !== 1 || !("result" in body)) {
+      throw new Error(`RPC host ${url.host} returned an invalid JSON-RPC response for ${method}.`);
+    }
+
+    return body.result;
   }
 
-  if (!response.ok) {
-    const detail = (await response.text()).replace(/\s+/g, " ").trim().slice(0, 240);
-    const reason = detail ? `: ${detail}` : "";
-    throw new Error(`RPC host ${url.host} returned HTTP ${response.status} for ${method}${reason}.`);
-  }
-
-  let body;
-  try {
-    body = await response.json();
-  } catch {
-    throw new Error(`RPC host ${url.host} returned invalid JSON for ${method}.`);
-  }
-  if (!body || typeof body !== "object" || Array.isArray(body)) {
-    throw new Error(`RPC host ${url.host} returned an invalid JSON-RPC response for ${method}.`);
-  }
-  if (body.error) {
-    throw new Error(`RPC host ${url.host} rejected ${method}: ${String(body.error.message ?? "JSON-RPC error")}`);
-  }
-  if (body.jsonrpc !== "2.0" || body.id !== 1 || !("result" in body)) {
-    throw new Error(`RPC host ${url.host} returned an invalid JSON-RPC response for ${method}.`);
-  }
-  return body.result;
+  throw new Error(`RPC host ${url.host} failed after retries for ${method}.`);
 }
 
 function decodeSymbol(raw) {
@@ -150,31 +208,86 @@ export async function verifyChain({
   const commonBlock = heads.reduce((lowest, head) => head.blockNumber < lowest ? head.blockNumber : lowest, heads[0].blockNumber);
   const commonBlockTag = `0x${commonBlock.toString(16)}`;
 
+  
+  const wethAddress = getAddress(ROBINHOOD_WETH);
+  const quoterAddress = getAddress(UNISWAP_V4_QUOTER);
+  const routerAddress = getAddress(UNISWAP_UNIVERSAL_ROUTER_V2_1_2);
+
   const snapshots = await Promise.all(heads.map(async (provider) => {
-    const [managerCode, tokenCode, symbolRaw, decimalsRaw] = await Promise.all([
+    const [
+      managerCode,
+      tokenCode,
+      symbolRaw,
+      decimalsRaw,
+      wethCode,
+      wethSymbolRaw,
+      wethDecimalsRaw,
+      quoterCode,
+      routerCode,
+    ] = await Promise.all([
       rpcCall(provider.url, "eth_getCode", [UNISWAP_V4_POOL_MANAGER, commonBlockTag], fetchImpl),
       rpcCall(provider.url, "eth_getCode", [tokenAddress, commonBlockTag], fetchImpl),
       rpcCall(provider.url, "eth_call", [{ to: tokenAddress, data: "0x95d89b41" }, commonBlockTag], fetchImpl),
       rpcCall(provider.url, "eth_call", [{ to: tokenAddress, data: "0x313ce567" }, commonBlockTag], fetchImpl),
+      rpcCall(provider.url, "eth_getCode", [wethAddress, commonBlockTag], fetchImpl),
+      rpcCall(provider.url, "eth_call", [{ to: wethAddress, data: "0x95d89b41" }, commonBlockTag], fetchImpl),
+      rpcCall(provider.url, "eth_call", [{ to: wethAddress, data: "0x313ce567" }, commonBlockTag], fetchImpl),
+      rpcCall(provider.url, "eth_getCode", [quoterAddress, commonBlockTag], fetchImpl),
+      rpcCall(provider.url, "eth_getCode", [routerAddress, commonBlockTag], fetchImpl),
     ]);
-    if (typeof managerCode !== "string" || !/^0x[0-9a-f]*$/i.test(managerCode) || managerCode.toLowerCase() === "0x") {
-      throw new Error(`${provider.name} RPC has no PoolManager bytecode at block ${commonBlock}.`);
+
+    const contracts = [
+      ["PoolManager", managerCode],
+      ["USDG", tokenCode],
+      ["WETH", wethCode],
+      ["Quoter", quoterCode],
+      ["Universal Router 2.1.2", routerCode],
+    ];
+
+    for (const [name, code] of contracts) {
+      if (typeof code !== "string" || !/^0x[0-9a-f]+$/i.test(code) || code.toLowerCase() === "0x") {
+        throw new Error(`${provider.name} RPC has no valid ${name} bytecode at block ${commonBlock}.`);
+      }
     }
-    if (typeof tokenCode !== "string" || !/^0x[0-9a-f]*$/i.test(tokenCode) || tokenCode.toLowerCase() === "0x") {
-      throw new Error(`${provider.name} RPC has no USDG contract bytecode at block ${commonBlock}.`);
-    }
+
     const symbol = decodeSymbol(symbolRaw);
     const decimals = rpcQuantity(decimalsRaw, `${provider.name} RPC USDG decimals`);
+
     if (symbol !== USDG_SYMBOL || decimals !== USDG_DECIMALS) {
-      throw new Error(`${provider.name} RPC token metadata mismatch: expected ${USDG_SYMBOL} with ${USDG_DECIMALS} decimals.`);
+      throw new Error(`${provider.name} RPC token metadata mismatch: expected USDG with 6 decimals.`);
     }
+
+    const wethSymbol = decodeSymbol(wethSymbolRaw);
+    const wethDecimals = rpcQuantity(wethDecimalsRaw, `${provider.name} RPC WETH decimals`);
+
+    if (wethSymbol !== "WETH" || wethDecimals !== 18n) {
+      throw new Error(`${provider.name} RPC token metadata mismatch: expected WETH with 18 decimals.`);
+    }
+
     return {
       managerCode: managerCode.toLowerCase(),
       tokenCode: tokenCode.toLowerCase(),
+      wethCode: wethCode.toLowerCase(),
+      quoterCode: quoterCode.toLowerCase(),
+      routerCode: routerCode.toLowerCase(),
       symbol,
       decimals,
+      wethSymbol,
+      wethDecimals,
     };
   }));
+
+  const bytecodeFields = [
+    "managerCode",
+    "tokenCode",
+    "wethCode",
+    "quoterCode",
+    "routerCode",
+  ];
+
+  if (bytecodeFields.some((field) => snapshots[0][field] !== snapshots[1][field])) {
+    throw new Error(`RPCs disagree on contract bytecode at common block ${commonBlock}.`);
+  }
 
   if (snapshots[0].managerCode !== snapshots[1].managerCode
     || snapshots[0].tokenCode !== snapshots[1].tokenCode) {
@@ -190,8 +303,21 @@ export async function verifyChain({
       blockNumber: blockNumber.toString(),
     })),
     poolManager: UNISWAP_V4_POOL_MANAGER,
-    usdg: { address: tokenAddress, symbol: snapshots[0].symbol, decimals: Number(snapshots[0].decimals) },
-    note: "Read-only checks passed. This verifies PoolManager bytecode and USDG metadata only; it does not verify USDG ownership, a Quoter/router deployment, pool liquidity, quote execution, or transaction safety.",
+    usdg: {
+      address: tokenAddress,
+      symbol: snapshots[0].symbol,
+      decimals: Number(snapshots[0].decimals),
+    },
+    weth: {
+      address: wethAddress,
+      symbol: snapshots[0].wethSymbol,
+      decimals: Number(snapshots[0].wethDecimals),
+    },
+    deployments: {
+      quoter: quoterAddress,
+      universalRouterV2_1_2: routerAddress,
+    },
+    note: "Read-only checks passed. Contract bytecode and token metadata were checked against two RPCs. This does not verify Quoter/router deployment, pool liquidity, quote execution, or transaction safety.",
   };
 }
 
@@ -259,6 +385,8 @@ function decodeInitializeLog(log, expectedCurrencies, fromBlock, toBlock) {
   );
   const pool = {
     poolId: id.toLowerCase(),
+    currency0: getAddress(expectedCurrencies[0]),
+    currency1: getAddress(expectedCurrencies[1]),
     fee: fee.toString(),
     tickSpacing: tickSpacing.toString(),
     hooks: getAddress(hooks),
@@ -284,6 +412,7 @@ export async function discoverV4Pools({
   fromBlock,
   toBlock,
   chunkSize = 1_000,
+  chunkDelayMs = 1_500,
   maxBlocks = 250_000,
   fetchImpl = fetch,
 }) {
@@ -296,10 +425,22 @@ export async function discoverV4Pools({
   if (!Number.isSafeInteger(maxBlocks) || maxBlocks < 1) {
     throw new Error("Pool scan maxBlocks must be a positive safe integer.");
   }
+  if (!Number.isSafeInteger(chunkDelayMs) || chunkDelayMs < 0 || chunkDelayMs > 60_000) {
+    throw new Error("Pool scan chunkDelayMs must be between 0 and 60000.");
+  }
 
   const tokenAddress = validateAddress(usdgAddress);
-  const currencies = [ZERO_ADDRESS, tokenAddress]
-    .sort((a, b) => a.toLowerCase() < b.toLowerCase() ? -1 : a.toLowerCase() > b.toLowerCase() ? 1 : 0);
+  const wethAddress = validateAddress(ROBINHOOD_WETH);
+
+  const currencyPairs = [
+    [ZERO_ADDRESS, tokenAddress],
+    [wethAddress, tokenAddress],
+  ].map((pair) =>
+    pair.sort((a, b) =>
+      a.toLowerCase() < b.toLowerCase() ? -1 :
+      a.toLowerCase() > b.toLowerCase() ? 1 : 0
+    )
+  );
   const primary = endpoint(primaryUrl, "Primary RPC");
   const secondary = endpoint(secondaryUrl, "Secondary RPC");
   if (primary.origin === secondary.origin) {
@@ -333,37 +474,67 @@ export async function discoverV4Pools({
       ? chunkFrom + BigInt(chunkSize) - 1n
       : upperBound;
 
-    const filter = {
-      address: UNISWAP_V4_POOL_MANAGER,
-      fromBlock: `0x${chunkFrom.toString(16)}`,
-      toBlock: `0x${chunkTo.toString(16)}`,
-      topics: [
-        INITIALIZE_TOPIC,
-        null,
-        indexedAddressTopic(currencies[0]),
-        indexedAddressTopic(currencies[1]),
-      ],
-    };
-    const responses = await Promise.all(providers.map(async (provider) => {
-      let logs;
-      try {
-        logs = await rpcCall(provider.url, "eth_getLogs", [filter], fetchImpl);
-      } catch (error) {
-        const detail = error instanceof Error ? error.message : "RPC request failed.";
-        throw new Error(`${detail} Requested block range ${chunkFrom}-${chunkTo}.`);
-      }
-      if (!Array.isArray(logs)) {
-        throw new Error(`${provider.name} RPC returned invalid eth_getLogs data.`);
-      }
-      return logs.map((log) => decodeInitializeLog(log, currencies, chunkFrom, chunkTo));
-    }));
+        const responses = await Promise.all(providers.map(async (provider) => {
+      const allLogs = [];
 
-    const stableLogs = (logs) => logs
-      .map((log) => JSON.stringify(log))
-      .sort();
-    if (JSON.stringify(stableLogs(responses[0])) !== JSON.stringify(stableLogs(responses[1]))) {
-      throw new Error(`RPCs disagree on ETH/USDG Initialize logs in blocks ${chunkFrom}-${chunkTo}.`);
+      for (const currencies of currencyPairs) {
+        const filter = {
+          address: UNISWAP_V4_POOL_MANAGER,
+          fromBlock: `0x${chunkFrom.toString(16)}`,
+          toBlock: `0x${chunkTo.toString(16)}`,
+          topics: [
+            INITIALIZE_TOPIC,
+            null,
+            indexedAddressTopic(currencies[0]),
+            indexedAddressTopic(currencies[1]),
+          ],
+        };
+
+        let logs;
+        try {
+          logs = await rpcCall(
+            provider.url,
+            "eth_getLogs",
+            [filter],
+            fetchImpl,
+          );
+        } catch (error) {
+          const detail = error instanceof Error
+            ? error.message
+            : "RPC request failed.";
+          throw new Error(
+            `${detail} Requested block range ${chunkFrom}-${chunkTo}.`,
+          );
+        }
+
+        if (!Array.isArray(logs)) {
+          throw new Error(
+            `${provider.name} RPC returned invalid eth_getLogs data.`,
+          );
+        }
+
+        allLogs.push(
+          ...logs.map((log) =>
+            decodeInitializeLog(log, currencies, chunkFrom, chunkTo)
+          ),
+        );
+      }
+
+      return allLogs;
+    }));
+    const normalizedResponses = responses.map((pools) =>
+      [...pools].sort((a, b) => a.poolId.localeCompare(b.poolId))
+    );
+
+    if (
+      JSON.stringify(normalizedResponses[0]) !==
+      JSON.stringify(normalizedResponses[1])
+    ) {
+      throw new Error(
+        `RPCs disagree on ETH/USDG or WETH/USDG Initialize logs in blocks ${chunkFrom}-${chunkTo}.`
+      );
     }
+
     for (const pool of responses[0]) {
       const previous = found.get(pool.poolId);
       if (previous && JSON.stringify(previous) !== JSON.stringify(pool)) {
@@ -372,6 +543,10 @@ export async function discoverV4Pools({
       found.set(pool.poolId, pool);
     }
     scannedTo = chunkTo;
+
+    if (scannedTo < upperBound && chunkDelayMs > 0) {
+      await sleep(chunkDelayMs);
+    }
   }
 
   const pools = [...found.values()].sort((a, b) => {
@@ -380,7 +555,10 @@ export async function discoverV4Pools({
     return BigInt(a.logIndex) < BigInt(b.logIndex) ? -1 : BigInt(a.logIndex) > BigInt(b.logIndex) ? 1 : 0;
   });
   return {
-    currencies: { currency0: currencies[0], currency1: currencies[1] },
+    currencyPairs: currencyPairs.map(([currency0, currency1]) => ({
+    currency0,
+    currency1,
+  })),
     fromBlock: from.toString(),
     toBlock: scannedTo.toString(),
     scannedBlocks: (scannedTo - from + 1n).toString(),
@@ -417,23 +595,60 @@ export async function verifyV4Pool({
   fee,
   tickSpacing,
   hooksAddress,
+  currency0,
+  currency1,
   fetchImpl = fetch,
 }) {
   if (!commonBlock || !/^\d+$/.test(String(commonBlock))) {
     throw new Error("A common block from verifyChain is required.");
   }
+
   const usd = validateAddress(usdgAddress);
-  const hooks = validatePoolKey({ fee, tickSpacing, hooksAddress });
-  const primary = endpoint(primaryUrl, "Primary RPC");
-  const secondary = endpoint(secondaryUrl, "Secondary RPC");
-  if (primary.origin === secondary.origin) {
-    throw new Error("Primary and secondary RPCs must use different origins.");
+  const weth = validateAddress(ROBINHOOD_WETH);
+
+  // Kompatibilitas dengan pemanggilan lama:
+  // jika keduanya tidak diberikan, default ke native ETH/USDG.
+  if ((currency0 === undefined) !== (currency1 === undefined)) {
+    throw new Error("Provide both currency0 and currency1.");
   }
 
-  const [currency0, currency1] = [
-    "0x0000000000000000000000000000000000000000",
-    usd,
-  ].sort((a, b) => a.toLowerCase() < b.toLowerCase() ? -1 : a.toLowerCase() > b.toLowerCase() ? 1 : 0);
+  const sortCurrencies = (currencies) =>
+    [...currencies].sort((a, b) =>
+      a.toLowerCase().localeCompare(b.toLowerCase()),
+    );
+
+  const suppliedPair = currency0 === undefined
+    ? sortCurrencies([ZERO_ADDRESS, usd])
+    : sortCurrencies([
+        validateAddress(currency0),
+        validateAddress(currency1),
+      ]);
+
+  const allowedPairs = [
+    sortCurrencies([ZERO_ADDRESS, usd]),
+    sortCurrencies([weth, usd]),
+  ];
+
+  const isAllowedPair = allowedPairs.some(
+    ([allowed0, allowed1]) =>
+      allowed0.toLowerCase() === suppliedPair[0].toLowerCase() &&
+      allowed1.toLowerCase() === suppliedPair[1].toLowerCase(),
+  );
+
+  if (!isAllowedPair) {
+    throw new Error(
+      "Pool currencies must be native ETH/USDG or WETH/USDG.",
+    );
+  }
+
+  const [poolCurrency0, poolCurrency1] = suppliedPair;
+
+  const hooks = validatePoolKey({
+    fee,
+    tickSpacing,
+    hooksAddress,
+  });
+
   const poolKey = [
     { type: "address" },
     { type: "address" },
@@ -442,8 +657,8 @@ export async function verifyV4Pool({
     { type: "address" },
   ];
   const poolId = keccak256(encodeAbiParameters(poolKey, [
-    currency0,
-    currency1,
+    poolCurrency0,
+    poolCurrency1,
     hooks.fee,
     hooks.tickSpacing,
     hooks.hooksAddress,
@@ -455,8 +670,8 @@ export async function verifyV4Pool({
   const liquiditySlot = `0x${(BigInt(stateSlot) + LIQUIDITY_OFFSET).toString(16).padStart(64, "0")}`;
   const blockTag = `0x${BigInt(commonBlock).toString(16)}`;
   const providers = [
-    { name: "primary", url: primary },
-    { name: "secondary", url: secondary },
+    { name: "primary", url: primaryUrl },
+    { name: "secondary", url: secondaryUrl },
   ];
 
   const states = await Promise.all(providers.map(async (provider) => {
@@ -531,7 +746,7 @@ export async function verifyV4Pool({
     || states[0].hooksCode !== states[1].hooksCode
     || JSON.stringify(Object.fromEntries(Object.entries(states[0].state).map(([key, value]) => [key, value.toString()])))
       !== JSON.stringify(Object.fromEntries(Object.entries(states[1].state).map(([key, value]) => [key, value.toString()])))) {
-    throw new Error(`RPCs disagree on PoolManager, hook, or pool state at block ${commonBlock}.`);
+    throw new Error("RPCs disagree on PoolManager, hook, or pool state.");
   }
 
   const state = states[0].state;

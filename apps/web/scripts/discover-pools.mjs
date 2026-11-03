@@ -38,6 +38,8 @@ async function main() {
         fee: pool.fee,
         tickSpacing: pool.tickSpacing,
         hooksAddress: pool.hooks,
+        currency0: pool.currency0,
+        currency1: pool.currency1,
       });
       if (state.poolId.toLowerCase() !== pool.poolId.toLowerCase()) {
         throw new Error("Calculated pool ID does not match the Initialize event.");
