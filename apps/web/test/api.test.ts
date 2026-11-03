@@ -6,6 +6,8 @@ import { POST as quotes } from "../app/api/quotes/route.ts";
 import { POST as inspect } from "../app/api/inspect/route.ts";
 import { POST as prepare } from "../app/api/execute/prepare/route.ts";
 import { GET as caps } from "../app/api/capabilities/route.ts";
+import { setPoolForTests } from "../lib/db";
+import { hashSessionToken } from "../lib/wallet-auth";
 
 const BASE = "http://localhost:3000";
 let n = 0;
@@ -31,6 +33,188 @@ const post = (
   });
 
 const j = async (r: Response) => (await r.json()) as any;
+const EXECUTION_TOKEN_A = "A".repeat(43);
+const EXECUTION_TOKEN_B = "B".repeat(43);
+
+const EXECUTION_USER_A = "11111111-1111-4111-8111-111111111111";
+const EXECUTION_USER_B = "22222222-2222-4222-8222-222222222222";
+
+const EXECUTION_KEY = "33333333-3333-4333-8333-333333333333";
+
+const executionIntent = {
+  kind: "swap",
+  chainId: 4663,
+  tokenIn: "USDG",
+  tokenOut: "ETH",
+  amountIn: "1",
+  privateRequested: false,
+};
+
+type ExecutionRow = {
+  user_id: string;
+  request_hash: string;
+  response: {
+    status: number;
+    body: Record<string, string>;
+  } | null;
+};
+
+function installExecutionDb(options: { failAudit?: boolean } = {}) {
+  const previousDatabaseUrl = process.env.DATABASE_URL;
+
+  process.env.DATABASE_URL = "postgres://vetto-test.invalid/test";
+
+  const rows = new Map<string, ExecutionRow>();
+  const auditEvents: unknown[][] = [];
+
+  const users = new Map([
+    [hashSessionToken(EXECUTION_TOKEN_A), EXECUTION_USER_A],
+    [hashSessionToken(EXECUTION_TOKEN_B), EXECUTION_USER_B],
+  ]);
+
+  const pool = {
+    query: async (sql: string, values: readonly unknown[] = []) => {
+      const normalized = sql.replace(/\s+/g, " ").trim().toLowerCase();
+
+      if (normalized.startsWith("select user_id from user_sessions")) {
+        const userId = users.get(String(values[0]));
+
+        return {
+          rows: userId ? [{ user_id: userId }] : [],
+          rowCount: userId ? 1 : 0,
+        };
+      }
+
+      throw new Error(`Unexpected pool SQL: ${normalized}`);
+    },
+
+    connect: async () => {
+      let snapshot: Map<string, ExecutionRow> | undefined;
+
+      const client = {
+        query: async (sql: string, values: readonly unknown[] = []) => {
+          const normalized = sql.replace(/\s+/g, " ").trim().toLowerCase();
+
+          if (normalized === "begin") {
+            snapshot = new Map(
+              [...rows.entries()].map(([key, value]) => [
+                key,
+                structuredClone(value),
+              ]),
+            );
+
+            return { rows: [], rowCount: 0 };
+          }
+
+          if (normalized === "commit") {
+            snapshot = undefined;
+            return { rows: [], rowCount: 0 };
+          }
+
+          if (normalized === "rollback") {
+            if (snapshot) {
+              rows.clear();
+
+              for (const [key, value] of snapshot) {
+                rows.set(key, structuredClone(value));
+              }
+            }
+
+            snapshot = undefined;
+            return { rows: [], rowCount: 0 };
+          }
+
+          if (normalized.startsWith("delete from idempotency_keys")) {
+            return { rows: [], rowCount: 0 };
+          }
+
+          if (normalized.startsWith("insert into idempotency_keys")) {
+            const [key, userId, requestHash] = values.map(String);
+
+            if (!rows.has(key!)) {
+              rows.set(key!, {
+                user_id: userId!,
+                request_hash: requestHash!,
+                response: null,
+              });
+            }
+
+            return { rows: [], rowCount: 1 };
+          }
+
+          if (normalized.startsWith("select user_id, request_hash, response")) {
+            const row = rows.get(String(values[0]));
+
+            return {
+              rows: row ? [structuredClone(row)] : [],
+              rowCount: row ? 1 : 0,
+            };
+          }
+
+          if (normalized.startsWith("insert into audit_log")) {
+            if (options.failAudit) {
+              throw new Error("Simulated audit database failure.");
+            }
+
+            auditEvents.push([...values]);
+
+            return { rows: [], rowCount: 1 };
+          }
+
+          if (normalized.startsWith("update idempotency_keys set response")) {
+            const row = rows.get(String(values[0]));
+
+            if (row) {
+              row.response = JSON.parse(String(values[1]));
+            }
+
+            return { rows: [], rowCount: row ? 1 : 0 };
+          }
+
+          throw new Error(`Unexpected client SQL: ${normalized}`);
+        },
+
+        release() {},
+      };
+
+      return client;
+    },
+  };
+
+  setPoolForTests(pool as never);
+
+  return {
+    rows,
+    auditEvents,
+    cleanup() {
+      setPoolForTests(undefined);
+
+      if (previousDatabaseUrl === undefined) {
+        delete process.env.DATABASE_URL;
+      } else {
+        process.env.DATABASE_URL = previousDatabaseUrl;
+      }
+    },
+  };
+}
+
+function authenticatedPrepareRequest(
+  token = EXECUTION_TOKEN_A,
+  intentBody: unknown = executionIntent,
+  key = EXECUTION_KEY,
+) {
+  return new Request(`${BASE}/api/execute/prepare`, {
+    method: "POST",
+    headers: {
+      origin: BASE,
+      "content-type": "application/json",
+      "x-forwarded-for": ip(),
+      "idempotency-key": key,
+      cookie: `vetto_session=${token}`,
+    },
+    body: JSON.stringify({ intent: intentBody }),
+  });
+}
 
 test("POST /api/intent: swap → typed intent + interpretation line", async () => {
   const r = await intent(
@@ -568,4 +752,94 @@ test("GET /api/capabilities: external capabilities are not falsely verified", as
 
   assert.ok(b.assets.some((a: any) => a.symbol === "ETH"));
   assert.ok(b.assets.some((a: any) => a.symbol === "USDG"));
+});
+
+test("execute prepare: same key and intent returns the stored response without duplicate audit", async () => {
+  const db = installExecutionDb();
+
+  try {
+    const first = await prepare(authenticatedPrepareRequest());
+    const firstBody = await j(first);
+
+    assert.equal(first.status, 503);
+    assert.equal(firstBody.code, "EXECUTION_DISABLED");
+
+    const second = await prepare(authenticatedPrepareRequest());
+    const secondBody = await j(second);
+
+    assert.equal(second.status, 503);
+    assert.deepEqual(secondBody, firstBody);
+
+    assert.equal(db.rows.size, 1);
+    assert.equal(db.auditEvents.length, 1);
+  } finally {
+    db.cleanup();
+  }
+});
+
+test("execute prepare: same key with a different intent returns 409", async () => {
+  const db = installExecutionDb();
+
+  try {
+    const first = await prepare(authenticatedPrepareRequest());
+
+    assert.equal(first.status, 503);
+
+    const changedIntent = {
+      ...executionIntent,
+      amountIn: "2",
+    };
+
+    const second = await prepare(
+      authenticatedPrepareRequest(
+        EXECUTION_TOKEN_A,
+        changedIntent,
+      ),
+    );
+
+    assert.equal(second.status, 409);
+    assert.equal(db.auditEvents.length, 1);
+  } finally {
+    db.cleanup();
+  }
+});
+
+test("execute prepare: same key used by another user returns 409", async () => {
+  const db = installExecutionDb();
+
+  try {
+    const first = await prepare(authenticatedPrepareRequest());
+
+    assert.equal(first.status, 503);
+
+    const second = await prepare(
+      authenticatedPrepareRequest(EXECUTION_TOKEN_B),
+    );
+
+    assert.equal(second.status, 409);
+    assert.equal(db.auditEvents.length, 1);
+  } finally {
+    db.cleanup();
+  }
+});
+
+test("execute prepare: audit failure rolls back the idempotency record", async () => {
+  const db = installExecutionDb({ failAudit: true });
+
+  try {
+    const response = await prepare(authenticatedPrepareRequest());
+    const body = await j(response);
+
+    assert.equal(response.status, 503);
+
+    assert.match(
+      body.error,
+      /no payload was created/i,
+    );
+
+    assert.equal(db.rows.size, 0);
+    assert.equal(db.auditEvents.length, 0);
+  } finally {
+    db.cleanup();
+  }
 });
