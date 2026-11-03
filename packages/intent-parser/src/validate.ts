@@ -1,4 +1,4 @@
-import { ROBINHOOD_CHAIN_ID } from "@vetto/asset-registry";
+import { findAsset, ROBINHOOD_CHAIN_ID } from "@vetto/asset-registry";
 import type { Intent } from "./types.ts";
 
 export class IntentValidationError extends Error {}
@@ -18,7 +18,22 @@ const str = (v: unknown, max: number, what: string): string => {
 };
 const url = (v: unknown): string => {
   const s = str(v, MAX_URL, "url");
-  try { new URL(s); } catch { fail("url is not parseable"); }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(s);
+  } catch {
+    fail("url is not parseable");
+  }
+
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+    fail("only HTTP and HTTPS URLs are allowed");
+  }
+
+  if (parsed.username || parsed.password) {
+    fail("URLs containing credentials are not allowed");
+  }
+
   return s;
 };
 
@@ -34,11 +49,27 @@ export function validateIntent(raw: unknown): Intent {
       if (raw.chainId !== ROBINHOOD_CHAIN_ID) fail("chain mismatch");
       const tokenIn = str(raw.tokenIn, 10, "tokenIn");
       const tokenOut = str(raw.tokenOut, 10, "tokenOut");
-      if (!SYMBOL_RE.test(tokenIn) || !SYMBOL_RE.test(tokenOut)) fail("tokens must be registry symbols");
+      const assetIn = findAsset(tokenIn);
+      const assetOut = findAsset(tokenOut);
+
+      if (!assetIn || !assetOut) {
+        fail("tokens must exist in the asset registry");
+      }
+
+      if (assetIn.symbol === assetOut.symbol) {
+        fail("input and output tokens must be different");
+      }
       const amountIn = str(raw.amountIn, 40, "amountIn");
       if (!AMOUNT_RE.test(amountIn)) fail("amountIn must be a plain decimal string");
       if (typeof raw.privateRequested !== "boolean") fail("privateRequested must be boolean");
-      const out: Intent = { kind: "swap", chainId: ROBINHOOD_CHAIN_ID, tokenIn, tokenOut, amountIn, privateRequested: raw.privateRequested };
+      const out: Intent = {
+        kind: "swap",
+        chainId: ROBINHOOD_CHAIN_ID,
+        tokenIn: assetIn.symbol,
+        tokenOut: assetOut.symbol,
+        amountIn,
+        privateRequested: raw.privateRequested,
+      };
       if (raw.slippageBps !== undefined) {
         const b = raw.slippageBps;
         if (typeof b !== "number" || !Number.isInteger(b) || b < 1 || b > 1000) fail("slippageBps must be an integer 1–1000");

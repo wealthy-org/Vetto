@@ -9,12 +9,12 @@ const fallbackWarning = (error?: unknown) => {
   const errorCode = error instanceof Error ? error.message : undefined;
   const providerStatus = errorCode ? /^LLM_PROVIDER_HTTP_(\d{3})$/.exec(errorCode)?.[1] : undefined;
   if (errorCode === "LLM_PROVIDER_TIMEOUT") {
-    return "AI parser timed out waiting for Gemini after 45 seconds. Try again later or check Gemini API availability and quota. Nothing was executed.";
+    return "AI parser timed out after 45 seconds. Check the configured AI provider and try again. Nothing was executed.";
   }
   const providerHint = providerStatus === "400" || providerStatus === "404"
     ? `The provider returned HTTP ${providerStatus}; verify that LLM_MODEL is available and the API URL is correct.`
     : providerStatus === "401" || providerStatus === "403"
-      ? `The provider returned HTTP ${providerStatus}; verify the API key and Gemini API access.`
+      ? `The provider returned HTTP ${providerStatus}; verify the API key and provider access.`
       : providerStatus === "429"
         ? "The provider returned HTTP 429; its free-tier quota or rate limit may have been reached."
         : providerStatus
@@ -194,10 +194,13 @@ export async function parseIntentWithLlm(input: string, ctx: ParseContext, llm?:
   try {
     const v = validateIntent(await llm(sanitize(input), ctx));
     if (v.kind === "swap") {
-      return buildSwap({
-        amountText: v.amountIn, tokenIn: v.tokenIn, tokenOut: v.tokenOut, privateRequested: v.privateRequested,
-        slippagePct: v.slippageBps !== undefined ? (v.slippageBps / 100).toString() : undefined,
-      });
+      console.warn(
+        "LLM attempted to create a swap without deterministic parser confirmation.",
+      );
+
+      return clarify(
+        "I cannot verify the swap parameters from your message. Please specify the amount and token pair explicitly, for example: swap 0.1 ETH to USDG.",
+      );
     }
     if (v.kind === "clarification") return clarify(v.question);
     return { ...first, warning: fallbackWarning() };
