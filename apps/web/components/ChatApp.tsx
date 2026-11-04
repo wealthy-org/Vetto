@@ -250,7 +250,15 @@ export function ChatApp() {
 
   async function executeSwap(msg: Msg | undefined) {
   const intent = msg?.result?.intent;
+
   if (!intent || intent.kind !== "swap" || executionBusy) return;
+
+  if (!msg.quote?.routes[0]?.isExecutable) {
+    setExecutionMessage(
+      "Swap execution is disabled. This quote is currently display-only.",
+    );
+    return;
+  }
 
   if (intent.privateRequested) {
     setExecutionMessage("Private swap is not supported.");
@@ -738,7 +746,12 @@ function Panel({
         <button
           type="button"
           onClick={onExecute}
-          disabled={executionBusy || !msg.quote || intent.privateRequested}
+          disabled={
+            executionBusy ||
+            !msg.quote ||
+            !msg.quote.routes[0]?.isExecutable ||
+            intent.privateRequested
+          }
           className="btn btn-primary mt-4 w-full disabled:cursor-not-allowed disabled:opacity-50"
         >
           {executionBusy ? "Processing swap..." : "Review and swap"}
