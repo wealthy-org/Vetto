@@ -17,9 +17,9 @@ test("wallet auth normalizes EVM addresses and accepts only 65-byte signatures",
   assert.equal(normalizeSignature("0x1234"), null);
 });
 
-test("wallet sign-in accepts only Ethereum Mainnet and Robinhood Chain", () => {
-  assert.equal(isWalletAuthChainId(1), true);
+test("wallet sign-in accepts only Robinhood Chain", () => {
   assert.equal(isWalletAuthChainId(4663), true);
+  assert.equal(isWalletAuthChainId(1), false);
   assert.equal(isWalletAuthChainId(5), false);
   assert.equal(isWalletAuthChainId("4663"), false);
 });
@@ -35,7 +35,7 @@ test("SIWE message is domain-bound, chain-bound, and explicitly not transaction 
   });
   assert.match(message, /^vetto\.example wants you to sign in with your Ethereum account:/);
   assert.match(message, /Sign in to VETTO\. This does not authorize token transfers or any transaction\./);
-  assert.match(message, /Chain ID: 1/);
+  assert.match(message, /Chain ID: 4663/);
   assert.match(message, /Nonce: a1b2c3d4e5f6a7b8/);
   assert.match(message, /Expiration Time: 2026-11-01T00:05:00\.000Z/);
 

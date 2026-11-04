@@ -10,7 +10,10 @@ import {
   parseDecimal,
 } from "@vetto/intent-parser";
 import { findAsset } from "@vetto/asset-registry";
-import { simulateRobinhoodV4Swap } from "@/lib/robinhood-v4-simulator";
+import {
+  simulateRobinhoodV4Swap,
+  type SimulationResult,
+} from "@/lib/robinhood-v4-simulator";
 
 export const runtime = "nodejs";
 
@@ -164,13 +167,51 @@ export async function POST(request: Request) {
       tokenIn.decimals,
     ).toString();
 
-    const simulation = await simulateRobinhoodV4Swap({
-      wallet: wallet.address,
-      tokenIn: tokenIn.symbol,
-      tokenOut: tokenOut.symbol,
-      amountInBaseUnits,
-      slippageBps: intent.slippageBps ?? 50,
-    });
+    let simulation: SimulationResult;
+
+    try {
+      simulation = await simulateRobinhoodV4Swap({
+        wallet: wallet.address,
+        tokenIn: tokenIn.symbol,
+        tokenOut: tokenOut.symbol,
+        amountInBaseUnits,
+        slippageBps: intent.slippageBps ?? 50,
+      });
+    } catch (error) {
+      const configurationMissing =
+        error instanceof Error &&
+        error.message ===
+          "Primary RPC, secondary RPC, or verified USDG configuration is missing.";
+
+      if (!configurationMissing) {
+        throw error;
+      }
+
+      const failure = {
+        error: "Swap execution is not configured. No transaction was sent.",
+        code: "EXECUTION_DISABLED",
+      };
+
+      await writeAudit(
+        { query: (text, values) => client!.query(text, [...values]) },
+        {
+          userId,
+          action: "execute.prepare",
+          intentKind: intent.kind,
+          decision: "execution-disabled",
+        },
+      );
+
+      await client.query(
+        "update idempotency_keys set response = $2::jsonb where key = $1",
+        [key, JSON.stringify({ status: 503, body: failure })],
+      );
+
+      await client.query("commit");
+      transactionOpen = false;
+
+      return storedResponse({ status: 503, body: failure });
+    }
 
     if (simulation.status !== "passed" || !simulation.transaction) {
       const failure = {

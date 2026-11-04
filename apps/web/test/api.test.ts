@@ -151,6 +151,17 @@ function installExecutionDb(options: { failAudit?: boolean } = {}) {
             };
           }
 
+          if (normalized.startsWith("select address, chain_id from wallet_identities")) {
+          return {
+            rows: [
+              {
+                address: "0x1111111111111111111111111111111111111111",
+                chain_id: "4663",
+              },
+            ],
+            rowCount: 1,
+          };
+}
           if (normalized.startsWith("insert into audit_log")) {
             if (options.failAudit) {
               throw new Error("Simulated audit database failure.");
@@ -680,7 +691,7 @@ test("POST /api/execute/prepare: requires a valid idempotency key and authentica
   assert.equal(response.status, 401);
 
   assert.deepEqual(await j(response), {
-    error: "Sign in before preparing a transaction.",
+    error: "Sign in before preparing a swap.",
   });
 });
 
@@ -834,7 +845,7 @@ test("execute prepare: audit failure rolls back the idempotency record", async (
 
     assert.match(
       body.error,
-      /no payload was created/i,
+      /no transaction was sent/i,
     );
 
     assert.equal(db.rows.size, 0);

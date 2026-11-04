@@ -22,29 +22,41 @@ export async function getWalletProvider(): Promise<WalletProvider> {
 
       return EthereumProvider.init({
         projectId: PROJECT_ID,
-        chains: [WALLET_AUTH_CHAIN_ID],
+
+        // Robinhood Chain Mainnet
+        optionalChains: [WALLET_AUTH_CHAIN_ID],
+
         showQrModal: true,
-        methods: [
-          "personal_sign",
-          "eth_accounts",
-          "eth_requestAccounts",
-          "eth_call",
-          "eth_getBalance",
-          "eth_sendTransaction",
-          "eth_getTransactionReceipt",
+
+        // Methods requested by VETTO
+        optionalMethods: [
+            "personal_sign",
+            "eth_accounts",
+            "eth_requestAccounts",
+            "eth_call",
+            "eth_getBalance",
+            "eth_sendTransaction",
+            "eth_getTransactionReceipt",
         ],
-        events: [
-          "accountsChanged",
-          "chainChanged",
-          "disconnect",
+
+        optionalEvents: [
+            "accountsChanged",
+            "chainChanged",
+            "disconnect",
         ],
-        metadata: {
-          name: "VETTO",
-          description: "Your DeFi banker. Every move checked.",
-          url: window.location.origin,
-          icons: [],
+
+        rpcMap: {
+            [WALLET_AUTH_CHAIN_ID]:
+            "https://rpc.mainnet.chain.robinhood.com",
         },
-      });
+
+        metadata: {
+            name: "VETTO",
+            description: "Your DeFi banker. Every move checked.",
+            url: window.location.origin,
+            icons: [],
+        },
+        });
     })().catch((error) => {
       providerPromise = null;
       throw error;

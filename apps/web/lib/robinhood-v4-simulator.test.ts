@@ -251,7 +251,7 @@ test("rejects swap when Router eth_call reverts", async () => {
   );
 
   assert.equal(result.status, "failed");
-  assert.equal(result.reason, "Router eth_call simulation reverted.");
+  assert.equal(result.reason, "Router transaction simulation reverted.");
   assert.equal(result.broadcast, false);
 });
 
