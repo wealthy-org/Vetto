@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { WALLET_AUTH_CHAIN_ID } from "@/lib/auth-constants";
 import { IconLock } from "./icons";
+import { getWalletProvider } from "@/lib/walletconnect-provider";
 
 const PROJECT_ID = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID;
 
@@ -64,23 +65,7 @@ export function WalletConnectSignIn({
     try {
       setProgress("Initializing WalletConnect...");
 
-      const { EthereumProvider } = await import(
-        "@walletconnect/ethereum-provider"
-      );
-
-      const provider = await EthereumProvider.init({
-        projectId: PROJECT_ID,
-        chains: [WALLET_AUTH_CHAIN_ID],
-        showQrModal: true,
-        methods: ["personal_sign", "eth_requestAccounts"],
-        events: ["accountsChanged", "chainChanged"],
-        metadata: {
-          name: "VETTO",
-          description: "Your DeFi banker. Every move checked.",
-          url: window.location.origin,
-          icons: [],
-        },
-      });
+      const provider = await getWalletProvider();
 
       provider.on("display_uri", () => {
         setProgress("Scan the QR code with your wallet...");
@@ -96,7 +81,9 @@ export function WalletConnectSignIn({
       }
 
       if (Number(provider.chainId) !== WALLET_AUTH_CHAIN_ID) {
-        throw new Error("Please connect using Ethereum Mainnet.");
+        throw new Error(
+          "Please connect using Robinhood Chain (4663).",
+        );
       }
 
       setProgress("Requesting secure login challenge...");
@@ -202,8 +189,8 @@ export function WalletConnectSignIn({
 
       {configured && (
         <p className="mt-2 text-xs text-white/40">
-          Secure wallet authentication on Ethereum Mainnet. Signing in does
-          not authorize or send transactions.
+          Secure wallet authentication on Robinhood Chain (4663).
+          Signing in does not authorize or send transactions.
         </p>
       )}
     </div>
