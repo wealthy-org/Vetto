@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { CAPABILITIES } from "@vetto/quote-engine";
@@ -12,12 +12,15 @@ export function Status() {
   const root = useRef<HTMLElement>(null);
   const total = CAPABILITIES.length;
   const verified = CAPABILITIES.filter((c) => c.status === "verified").length;
+  const [animatedCount, setAnimatedCount] = useState(0);
 
   useEffect(() => {
     const el = root.current;
     if (!el) return;
-    const countEl = el.querySelector<HTMLElement>("[data-count]");
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) { if (countEl) countEl.textContent = String(verified); return; }
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setAnimatedCount(verified);
+      return;
+    }
     gsap.registerPlugin(ScrollTrigger);
     const ctx = gsap.context(() => {
       // heading block rises in
@@ -27,7 +30,12 @@ export function Status() {
       const counter = { v: 0 };
       const fill = gsap.timeline({ scrollTrigger: { trigger: "[data-meter]", start: "top 85%", end: "bottom 45%", scrub: 0.6 } });
       fill.from("[data-dot]", { scale: 0, opacity: 0, stagger: 0.08, ease: "back.out(2)", duration: 0.5 }, 0)
-        .to(counter, { v: verified, duration: 1, ease: "none", onUpdate: () => { if (countEl) countEl.textContent = String(Math.round(counter.v)); } }, 0);
+        .to(counter, {
+          v: verified,
+          duration: 1,
+          ease: "none",
+          onUpdate: () => setAnimatedCount(Math.round(counter.v)),
+        }, 0);
 
       // every capability row slides in as it reaches the viewport; its chip lights up when settled
       gsap.utils.toArray<HTMLElement>("[data-row]").forEach((row) => {
@@ -47,7 +55,9 @@ export function Status() {
 
           <div data-rise data-meter className="glass mt-8 rounded-2xl p-5">
             <div className="flex items-end gap-3">
-              <span className="text-6xl font-semibold leading-none tracking-tight"><span data-count>{verified}</span></span>
+              <span className="text-6xl font-semibold leading-none tracking-tight">
+                <span data-count>{animatedCount}</span>
+              </span>
               <span className="pb-1 text-sm text-white/55">of {total} capabilities verified</span>
             </div>
             <div className="mt-4 flex flex-wrap gap-1.5" aria-hidden>
