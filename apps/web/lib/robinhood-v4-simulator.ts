@@ -100,6 +100,7 @@ export interface SimulationDependencies {
   now?: () => number;
 }
 
+
 export interface SimulationResult {
   status: "passed" | "failed";
   chainId: number;
@@ -112,9 +113,16 @@ export interface SimulationResult {
   estimatedGas?: string;
   quoteBlockNumber?: string;
   quoteBlockHash?: string;
+  transaction?: {
+    to: Address;
+    data: `0x${string}`;
+    value: string;
+    deadline: string;
+  };
   reason?: string;
   broadcast: false;
 }
+
 
 function validateRpcUrl(value: string, label: string): URL {
   let url: URL;
@@ -484,7 +492,7 @@ export async function simulateRobinhoodV4Swap(
     };
   }
 
-  try {
+    try {
     await primary.call({
       account: wallet,
       to: ROUTER,
@@ -493,17 +501,30 @@ export async function simulateRobinhoodV4Swap(
       blockNumber: commonBlock,
     });
 
+    // eth_call berhasil: transaksi boleh disiapkan.
     return {
       ...baseResult,
       status: "passed",
       estimatedGas: estimatedGas.toString(),
+      transaction: {
+        to: ROUTER,
+        data: tx.data,
+        value: tx.value.toString(),
+        deadline: deadline.toString(),
+      },
     };
-  } catch {
+  } catch (error) {
+    // eth_call gagal: jangan pernah mengembalikan status passed.
+    console.error(
+      "Router transaction simulation reverted:",
+      error instanceof Error ? error.message : error,
+    );
+
     return {
       ...baseResult,
       status: "failed",
       estimatedGas: estimatedGas.toString(),
-      reason: "Router eth_call simulation reverted.",
+      reason: "Router transaction simulation reverted.",
     };
   }
 }

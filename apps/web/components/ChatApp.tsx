@@ -13,6 +13,7 @@ import { StatusChip } from "./StatusChip";
 import { SessionStatus } from "./SessionStatus";
 import { WalletBalances } from "./WalletBalances";
 import { IconArrow, IconLock } from "./icons";
+import { getConnectedWallet } from "@/lib/walletconnect-provider";
 
 type InspectResponse = { host: string | null; report: RiskReport };
 type Msg = { id: number; role: "user" | "banker"; text: string; result?: ParseResult; quote?: QuoteResult; inspect?: InspectResponse; capId?: string };
@@ -57,6 +58,8 @@ export function ChatApp() {
   const historyTriggerRef = useRef<HTMLButtonElement>(null);
   const historyCloseRef = useRef<HTMLButtonElement>(null);
   const historyReadyRef = useRef<Promise<boolean> | null>(null);
+  const [executionBusy, setExecutionBusy] = useState(false);
+  const [executionMessage, setExecutionMessage] = useState("");
 
   // `?ask=` pre-fills the composer. It never auto-sends: nothing runs until the person presses Enter.
   useEffect(() => { const a = params.get("ask"); if (a) setInput(a.slice(0, 500)); }, [params]);
@@ -245,6 +248,130 @@ export function ChatApp() {
     } finally { setBusy(false); }
   }
 
+  async function executeSwap(msg: Msg | undefined) {
+  const intent = msg?.result?.intent;
+  if (!intent || intent.kind !== "swap" || executionBusy) return;
+
+  if (intent.privateRequested) {
+    setExecutionMessage("Private swap is not supported.");
+    return;
+  }
+
+  setExecutionBusy(true);
+  setExecutionMessage("Running transaction simulation...");
+
+  try {
+    const response = await fetch("/api/execute/prepare", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": crypto.randomUUID(),
+      },
+      body: JSON.stringify({ intent }),
+    });
+
+    const prepared = await response.json() as {
+      status?: string;
+      wallet?: string;
+      chainId?: number;
+      transaction?: {
+        to: string;
+        data: string;
+        value: string;
+        deadline: string;
+      };
+      simulation?: {
+        minOutBaseUnits?: string;
+        estimatedGas?: string;
+      };
+      error?: string;
+    };
+
+    if (!response.ok || prepared.status !== "prepared" || !prepared.transaction) {
+      throw new Error(prepared.error ?? "Transaction preparation failed.");
+    }
+
+    const tx = prepared.transaction;
+
+    const confirmed = window.confirm(
+      `Review swap before wallet confirmation:\n\n` +
+      `Pay: ${intent.amountIn} ${intent.tokenIn}\n` +
+      `Receive at least: ${prepared.simulation?.minOutBaseUnits ?? "unavailable"} base units of ${intent.tokenOut}\n` +
+      `Network: Robinhood Chain (4663)\n` +
+      `Destination: ${tx.to}\n\n` +
+      `Continue to wallet confirmation?`,
+    );
+
+    if (!confirmed) {
+      setExecutionMessage("Swap cancelled. No transaction was sent.");
+      return;
+    }
+
+    setExecutionMessage("Connecting wallet...");
+
+    const { provider, address } = await getConnectedWallet();
+
+    if (address.toLowerCase() !== prepared.wallet?.toLowerCase()) {
+      throw new Error("Connected wallet does not match the wallet used for simulation.");
+    }
+
+    if (Number(provider.chainId) !== 4663) {
+      throw new Error("Wallet is not connected to Robinhood Chain.");
+    }
+
+    setExecutionMessage("Waiting for wallet signature...");
+
+    const hash = await provider.request<string>({
+      method: "eth_sendTransaction",
+      params: [{
+        from: address,
+        to: tx.to,
+        data: tx.data,
+        value: `0x${BigInt(tx.value).toString(16)}`,
+      }],
+    });
+
+    if (!hash || !/^0x[0-9a-fA-F]{64}$/.test(hash)) {
+      throw new Error("Wallet did not return a valid transaction hash.");
+    }
+
+    setExecutionMessage(`Transaction submitted: ${hash}. Waiting for confirmation...`);
+
+    const startedAt = Date.now();
+
+    while (Date.now() - startedAt < 120_000) {
+      const receipt = await provider.request<{
+        status?: string;
+        transactionHash?: string;
+      } | null>({
+        method: "eth_getTransactionReceipt",
+        params: [hash],
+      });
+
+      if (receipt) {
+        if (receipt.status !== "0x1") {
+          throw new Error(`Transaction reverted: ${hash}`);
+        }
+
+        setExecutionMessage(`Swap confirmed on Robinhood Chain. Transaction: ${hash}`);
+        return;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+
+    setExecutionMessage(
+      `Transaction submitted but confirmation timed out. Check transaction: ${hash}`,
+    );
+  } catch (error) {
+    setExecutionMessage(
+      error instanceof Error ? error.message : "Swap execution failed.",
+    );
+  } finally {
+    setExecutionBusy(false);
+  }
+}
+
   const kindTone = preview.intent.kind === "clarification" ? "text-peach" : "text-lilac";
 
   return (
@@ -379,7 +506,12 @@ export function ChatApp() {
         {/* RIGHT PANEL (bottom sheet on mobile) */}
         <aside aria-label="Review" className={`fixed inset-x-0 bottom-0 z-40 max-h-[78svh] overflow-y-auto rounded-t-3xl border-t border-white/10 bg-panel p-5 transition-transform duration-300 lg:static lg:max-h-none lg:translate-y-0 lg:rounded-none lg:border-l lg:border-t-0 lg:bg-transparent ${sheet ? "translate-y-0" : "translate-y-full"}`}>
           <div className="mb-3 flex items-center justify-between lg:hidden"><span className="text-sm font-semibold">Review</span><button type="button" className="text-sm text-white/60" onClick={() => setSheet(false)}>Close</button></div>
-          <Panel msg={active} />
+          <Panel
+            msg={active}
+            onExecute={() => void executeSwap(active)}
+            executionBusy={executionBusy}
+            executionMessage={executionMessage}
+          />
         </aside>
       </div>
     </div>
@@ -458,7 +590,17 @@ function Row({ k, v, dim }: { k: string; v: string; dim?: boolean }) {
 }
 
 
-function Panel({ msg }: { msg: Msg | undefined }) {
+function Panel({
+  msg,
+  onExecute,
+  executionBusy,
+  executionMessage,
+}: {
+  msg: Msg | undefined;
+  onExecute: () => void;
+  executionBusy: boolean;
+  executionMessage: string;
+}) {
   const intent = msg?.result?.intent;
 
   if (!msg || !intent) {
@@ -595,14 +737,25 @@ function Panel({ msg }: { msg: Msg | undefined }) {
 
         <button
           type="button"
-          disabled
-          className="btn btn-primary mt-4 w-full opacity-50"
+          onClick={onExecute}
+          disabled={executionBusy || !msg.quote || intent.privateRequested}
+          className="btn btn-primary mt-4 w-full disabled:cursor-not-allowed disabled:opacity-50"
         >
-          Swap execution unavailable
+          {executionBusy ? "Processing swap..." : "Review and swap"}
         </button>
 
+        {executionMessage && (
+          <p
+            role="status"
+            aria-live="polite"
+            className="mt-3 break-words text-xs leading-relaxed text-white/65"
+          >
+            {executionMessage}
+          </p>
+        )}
+
         <p className="mt-2 text-center text-[11px] text-white/35">
-          No transaction will be signed or broadcast by this build.
+          The wallet will ask for your approval before submitting the transaction.
         </p>
       </div>
     );

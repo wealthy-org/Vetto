@@ -31,6 +31,7 @@ export async function getWalletProvider(): Promise<WalletProvider> {
           "eth_call",
           "eth_getBalance",
           "eth_sendTransaction",
+          "eth_getTransactionReceipt",
         ],
         events: [
           "accountsChanged",
