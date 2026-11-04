@@ -35,6 +35,7 @@ body { background: var(--bg); color: #f1eeff; font-family: var(--font-sans), sys
   .status-unavailable { background: rgba(255,111,125,.14); color: var(--bad); }
   .chat-glass {
     background: rgba(25, 19, 57, 0.58);
+    border: 0;
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
   }

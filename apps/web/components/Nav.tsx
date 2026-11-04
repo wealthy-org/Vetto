@@ -44,14 +44,14 @@ export function Nav() {
   return (
     <header className="fixed inset-x-0 top-0 z-50 bg-ink pt-[env(safe-area-inset-top)]">
       <nav
-        className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3.5 sm:px-5"
+        className="relative mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3.5 sm:px-5"
         aria-label="Main"
       >
         <Link href="/" className="shrink-0 text-[15px]">
           <Logo />
         </Link>
 
-        <ul className="glass hidden items-center gap-1 rounded-full p-1 text-[13px] md:flex">
+        <ul className="glass absolute left-1/2 hidden -translate-x-1/2 items-center gap-1 rounded-full p-1 text-[13px] md:flex">
           {TABS.map((t) => (
             <li key={t.id}>
               <a

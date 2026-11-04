@@ -384,7 +384,7 @@ export function ChatApp() {
 
   return (
     <div className="flex h-[100svh] min-w-0 flex-col">
-      <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-white/8 px-3 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))] text-xs sm:flex-nowrap sm:px-4 sm:py-3 sm:text-sm">
+      <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b-[0.5px] border-white/[0.035] px-3 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))] text-xs sm:flex-nowrap sm:px-4 sm:py-3 sm:text-sm">
         <div className="flex items-center gap-4"><Link href="/"><Logo /></Link><span className="chip hidden sm:inline-flex"><i className="h-2 w-2 rounded-full bg-mint" />Robinhood Chain</span></div>
         <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-end sm:gap-4">
           <button
@@ -406,7 +406,7 @@ export function ChatApp() {
 
       <div className="grid min-h-0 min-w-0 flex-1 lg:grid-cols-[230px_minmax(0,1fr)_340px]">
         {/* LEFT RAIL */}
-        <nav className="hidden overflow-y-auto border-r border-white/8 p-4 text-sm lg:block" aria-label="Chats and history">
+        <nav className="hidden overflow-y-auto border-r-[0.5px] border-white/[0.035] p-4 text-sm lg:block" aria-label="Chats and history">
           <button type="button" onClick={startNewChat} className="btn btn-ghost mb-5 w-full">New chat</button>
           <HistoryContent
             history={history}
@@ -475,8 +475,8 @@ export function ChatApp() {
               <ol className="mx-auto max-w-2xl space-y-4">
                 {msgs.map((m) => (
                   <li key={m.id} className={`step-in flex gap-3 ${m.role === "user" ? "justify-end" : ""}`}>
-                    {m.role === "banker" && <span className="mt-1 grid h-8 w-8 shrink-0 place-items-center rounded-full glass"><Mark size={18} /></span>}
-                    <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${m.role === "user" ? "bg-white/10" : "glass"}`}>
+                    {m.role === "banker" && <span className="mt-1 grid h-8 w-8 shrink-0 place-items-center rounded-full chat-glass"><Mark size={18} /></span>}
+                    <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${m.role === "user" ? "bg-white/10" : "chat-glass"}`}>
                       <p>{m.text}</p>
                       {m.result && m.result.intent.kind !== "chat" && m.result.intent.kind !== "clarification" && <p className="mt-2 rounded-lg bg-white/[.05] px-3 py-2 text-xs text-lilac">{m.result.label}</p>}
                       {m.result?.intent.kind === "clarification" && m.result.intent.choices && (
@@ -494,14 +494,14 @@ export function ChatApp() {
             )}
           </div>
 
-          <form className="border-t border-white/8 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3" onSubmit={(e) => { e.preventDefault(); void send(input); }}>
+          <form className="border-t-[0.5px] border-white/[0.035] px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3" onSubmit={(e) => { e.preventDefault(); void send(input); }}>
             <div className="mx-auto max-w-2xl">
               <p aria-live="polite" className={`mb-2 min-h-[1.25rem] truncate text-xs ${kindTone}`}>{typedSecret ? <span className="text-coral">{secretMessage(typedSecret)}</span> : input.trim() ?<><span className="text-white/40">I read this as: </span>{preview.label}</> : <span className="text-white/35">{preview.label}</span>}</p>
-              <div className="glass flex items-end gap-2 rounded-2xl p-2">
+              <div className="chat-glass flex items-end gap-2 rounded-2xl p-2">
                 <label htmlFor="composer" className="sr-only">Your request</label>
                 <textarea id="composer" rows={1} value={input} maxLength={500} placeholder="Swap 100 USDG to ETH…" onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void send(input); } }}
-                  className="max-h-32 min-h-[2.5rem] min-w-0 flex-1 resize-none bg-transparent px-3 py-2 text-sm outline-none placeholder:text-white/35" />
+                  className="max-h-40 min-h-[3rem] min-w-0 flex-1 resize-none bg-transparent px-3 py-3 text-[14px] leading-6 text-white outline-none placeholder:text-white/30 focus-visible:outline-none" />
                 <button type="button" aria-disabled="true" aria-pressed={privNote} onClick={() => setPrivNote((v) => !v)} title="Private submission" className="chip !h-10 shrink-0 cursor-not-allowed opacity-60"><IconLock className="h-3.5 w-3.5" /> Private</button>
                 <button type="submit" disabled={busy || !input.trim() || !!typedSecret} aria-label="Send" className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white text-ink transition-opacity disabled:opacity-40"><IconArrow className="h-4 w-4" /></button>
               </div>
