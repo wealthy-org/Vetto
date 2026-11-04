@@ -42,9 +42,6 @@ function readableError(cause: unknown): string {
 }
 
 export function WalletConnectSignIn({
-  mode,
-}: {
-  mode: "sign-in" | "sign-up";
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -146,16 +143,12 @@ export function WalletConnectSignIn({
         disabled={!configured || busy}
         onClick={() => void signIn()}
         aria-busy={busy}
-        className="flex w-full min-w-0 items-center gap-3 rounded-xl border border-white/10 bg-white/[.04] px-4 py-3 text-left text-sm font-medium transition-colors hover:border-lilac/50 hover:bg-white/[.08] disabled:cursor-not-allowed disabled:opacity-60"
+        className="flex w-full min-w-0 items-center gap-3 rounded-xl bg-white/[.07] px-4 py-3 text-left text-sm font-medium transition-colors hover:bg-white/[.12] disabled:cursor-not-allowed disabled:opacity-60"
       >
         <IconLock className="h-4 w-4 shrink-0" />
 
         <span className="min-w-0 flex-1">
-          {busy
-            ? progress
-            : mode === "sign-up"
-              ? "Create account with WalletConnect"
-              : "Sign in with WalletConnect"}
+          {busy ? progress : "Connect wallet"}
         </span>
 
         <span

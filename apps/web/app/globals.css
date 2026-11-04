@@ -33,6 +33,18 @@ body { background: var(--bg); color: #f1eeff; font-family: var(--font-sans), sys
   .status-verified { background: rgba(126,226,168,.14); color: var(--ok); }
   .status-planned { background: rgba(201,182,255,.14); color: var(--lilac); }
   .status-unavailable { background: rgba(255,111,125,.14); color: var(--bad); }
+  .chat-glass {
+    background: rgba(25, 19, 57, 0.58);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+  }
+
+  .auth-panel {
+    background: rgba(18, 13, 48, 0.72);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.22);
+  }
 }
 
 /* Faint repeating-word texture behind every dark section (the canvas lens is only in hero/CTA). */
