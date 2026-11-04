@@ -1,7 +1,7 @@
 import { findAsset, listAssets, ROBINHOOD_CHAIN_ID } from "@vetto/asset-registry";
 import { DecimalError, normalizeAmountText, parseDecimal } from "./decimal.ts";
 import type { Intent, LlmParser, ParseContext, ParseResult, PendingIntent } from "./types.ts";
-import { validateIntent } from "./validate.ts";
+import { IntentValidationError, validateIntent } from "./validate.ts";
 
 const MAX_INPUT = 500;
 const MAX_SLIPPAGE_BPS = 1000; // 10% hard ceiling
@@ -187,12 +187,22 @@ export function parseIntent(input: string, ctx: ParseContext = {}): ParseResult 
  * input. It never chooses addresses, spenders or calls. Only swaps and clarification
  * questions are accepted; any other kind or failure falls back to the deterministic result.
  */
-export async function parseIntentWithLlm(input: string, ctx: ParseContext, llm?: LlmParser): Promise<ParseResult> {
+export async function parseIntentWithLlm(
+  input: string,
+  ctx: ParseContext,
+  llm?: LlmParser,
+): Promise<ParseResult> {
   const first = parseIntent(input, ctx);
-  if (first.intent.kind !== "chat" || !first.intent.text) return first;
+
+  if (first.intent.kind !== "chat" || !first.intent.text) {
+    return first;
+  }
+
   if (!llm) return first;
+
   try {
     const v = validateIntent(await llm(sanitize(input), ctx));
+
     if (v.kind === "swap") {
       console.warn(
         "LLM attempted to create a swap without deterministic parser confirmation.",
@@ -202,16 +212,55 @@ export async function parseIntentWithLlm(input: string, ctx: ParseContext, llm?:
         "I cannot verify the swap parameters from your message. Please specify the amount and token pair explicitly, for example: swap 0.1 ETH to USDG.",
       );
     }
-    if (v.kind === "clarification") return clarify(v.question);
-    return { ...first, warning: fallbackWarning() };
-  } catch (error) {
+
+    if (v.kind === "clarification") {
+      return clarify(v.question);
+    }
+
+    return {
+      ...first,
+      warning: fallbackWarning(),
+    };
+    } catch (error) {
     if (
       error instanceof Error &&
-      (/^LLM_PROVIDER_HTTP_\d{3}$/.test(error.message) || error.message === "LLM_PROVIDER_TIMEOUT")
+      error.message === "LLM_PROVIDER_TIMEOUT"
     ) {
-      return { ...first, warning: fallbackWarning(error) };
+      return {
+        ...clarify(
+          "The AI parser timed out. Please specify the amount and token pair explicitly, then try again.",
+        ),
+        warning: fallbackWarning(error),
+      };
     }
-    console.warn("LLM intent response was unusable; using deterministic fallback.");
-    return { ...first, warning: fallbackWarning() };
+
+    if (
+      error instanceof Error &&
+      /^LLM_PROVIDER_HTTP_\d{3}$/.test(error.message)
+    ) {
+      return {
+        ...first,
+        warning: fallbackWarning(error),
+      };
+    }
+
+    if (error instanceof IntentValidationError) {
+      console.warn(
+        "LLM returned an invalid intent; asking for clarification.",
+      );
+
+      return clarify(
+        "I could not verify the requested swap. Please specify the amount and token pair explicitly.",
+      );
+    }
+
+    console.warn(
+      "LLM intent response was unusable; using deterministic fallback.",
+    );
+
+    return {
+      ...first,
+      warning: fallbackWarning(),
+    };
   }
 }
