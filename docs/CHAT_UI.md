@@ -35,19 +35,23 @@ The left column keeps the newest exchange in view; older ones collapse behind
 
 ## Character poses
 
-Two of the poses no longer draw a second arm. `idle`, `clasp`, `think` and `live` use the
-sleeve shapes that already attach correctly at the shoulder; `wave` **rotates that same
-sleeve up** around its own shoulder origin (`transform-box: fill-box`, `transform-origin`
-near the shoulder seam) and adds a `rotate`-based sway so the greeting keeps moving.
+`idle`, `clasp`, `think` and `live` use the sleeve shapes that already attach correctly at
+the shoulder. `wave` draws **one** dedicated raised arm (`.pose-wave-arm`, shoulder → elbow →
+wrist → glove) and fades the hanging right sleeve (`.arm-r`) out completely, so no second
+sleeve or glove is left over at the hip.
 
-Why: hand-authored raised arms kept detaching from the shoulder and covering the lapel,
-and the alternate limb hid the white cuff. Rotating the attached sleeve keeps the silhouette
-of the jacket correct for free.
+The raised arm is emitted **before** the shirt/vest/lapels in the SVG, so the jacket front
+covers its shoulder end and the limb reads as coming out of the body instead of lying on top
+of it. Its sway (`wave-sway`) rotates the whole group around the shoulder point
+(`transform-box: view-box`, `transform-origin: 352px 398px`).
+
+Why not rotate the hanging sleeve instead: rotating `.arm-r` left the idle sleeve and its
+bottom glove visible next to the raised arm, so the figure looked duplicated.
 
 | Pose | How it is built | Notes |
 | --- | --- | --- |
 | `idle` | hanging sleeves, unchanged | default everywhere |
-| `wave` | `rotate(-148deg)` on `.arm-r` + `wave-sway` (4.4 s loop) | used on the landing stage and the agent-task row |
+| `wave` | dedicated `.pose-wave-arm` (shoulder→elbow→wrist→glove), `.arm-r` hidden, `wave-sway` (1.9 s loop) | used on the landing stage and the agent-task row |
 | `think` | `JointedArm` (shoulder → elbow → wrist, stroked as one path) | hand beside the chin while a quote loads |
 | `clasp` | both forearms folded, gloves together | swap/showcase row |
 | `live` | headset overlay | live-browser row |

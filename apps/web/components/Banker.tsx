@@ -235,6 +235,22 @@ export function Banker({ pose = "idle", className = "", fade = true, viewBox = "
         {/* jacket back */}
         <path d="M150 400Q272 340 394 400L420 760H124Z" fill={`url(#${id("coat")})`} />
 
+        {/* Raised right arm, drawn before the shirt/vest/lapels so its shoulder end is
+            covered by the jacket front — the limb then reads as coming out of the body
+            instead of lying on top of it. Only visible in the wave pose. */}
+        <g className="pose-wave-arm">
+          <path d="M352 398 L424 452" fill="none" stroke="#1f1659" strokeWidth={53} strokeLinecap="round" />
+          <path d="M352 398 L424 452" fill="none" stroke={`url(#${id("sleeve")})`} strokeWidth={50} strokeLinecap="round" />
+          <path d="M424 452 L462 356" fill="none" stroke="#1f1659" strokeWidth={43} strokeLinecap="round" />
+          <path d="M424 452 L462 356" fill="none" stroke={`url(#${id("sleeve")})`} strokeWidth={40} strokeLinecap="round" />
+          <g transform="translate(462 356) rotate(21)">
+            <rect x={-25} y={-7} width={50} height={14} rx={5} fill="#fff" stroke="#cfc8ee" strokeWidth={1.5} />
+          </g>
+          <g transform="translate(462 356) rotate(21) scale(0.5) translate(-543 -402)">
+            <path d="M502 398 498 332Q496 316 510 316L516 348 518 298Q520 282 534 284L538 342 544 292Q548 276 561 280L560 342 570 310Q578 298 588 306Q590 332 578 374L568 402Z" fill="#f4f1ff" stroke="#cfc8ee" strokeWidth={2.6} strokeLinejoin="round" />
+          </g>
+        </g>
+
         {/* neck */}
         <path d="M232 280 236 376Q272 396 312 376L316 280Z" fill="#dca47c" />
         <path d="M232 284Q272 322 316 284V312Q272 340 232 312Z" fill="#c68b64" opacity=".5" />
@@ -260,17 +276,12 @@ export function Banker({ pose = "idle", className = "", fade = true, viewBox = "
         <g className="arm arm-l">
           <path d="M168 412C122 402 84 430 74 482L50 760H130L134 540C140 490 172 470 168 412Z" fill={`url(#${id("sleeve")})`} stroke="#1f1659" strokeWidth="1.6" strokeLinejoin="round" />
           <rect x="50" y="690" width="82" height="14" rx="5" fill="#fff" stroke="#cfc8ee" strokeWidth="1.4" />
-          <g transform="translate(90 700) rotate(180) scale(0.5) translate(-543 -402)">
-            <path d="M502 398 498 332Q496 316 510 316L516 348 518 298Q520 282 534 284L538 342 544 292Q548 276 561 280L560 342 570 310Q578 298 588 306Q590 332 578 374L568 402Z" fill="#f4f1ff" stroke="#cfc8ee" strokeWidth="3" strokeLinejoin="round" />
-          </g>
+          <path d="M54 704H128L122 758H60Z" fill="#f4f1ff" stroke="#cfc8ee" strokeWidth="1.6" strokeLinejoin="round" />
         </g>
         <g className="arm arm-r">
           <path d="M376 412C422 402 460 430 470 482L494 760H414L410 540C404 490 372 470 376 412Z" fill={`url(#${id("sleeve")})`} stroke="#1f1659" strokeWidth="1.6" strokeLinejoin="round" />
           <rect x="412" y="690" width="82" height="14" rx="5" fill="#fff" stroke="#cfc8ee" strokeWidth="1.4" />
-          {/* gloved hand continues the sleeve; in the wave pose it rotates up with the arm */}
-          <g transform="translate(452 700) rotate(180) scale(0.5) translate(-543 -402)">
-            <path d="M502 398 498 332Q496 316 510 316L516 348 518 298Q520 282 534 284L538 342 544 292Q548 276 561 280L560 342 570 310Q578 298 588 306Q590 332 578 374L568 402Z" fill="#f4f1ff" stroke="#cfc8ee" strokeWidth="3" strokeLinejoin="round" />
-          </g>
+          <path d="M416 704H490L484 758H422Z" fill="#f4f1ff" stroke="#cfc8ee" strokeWidth="1.6" strokeLinejoin="round" />
         </g>
 
         {/* clasp: both forearms folded in front, gloves together */}
