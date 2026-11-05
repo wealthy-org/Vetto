@@ -77,16 +77,10 @@ export function Nav() {
             Docs
           </Link>
 
+          {/* One entry point: Launch app opens the sign-in desk, which continues to /app. */}
           <Link
             href="/sign-in"
-            className="rounded-full border border-white/20 px-3.5 py-2 font-semibold text-white transition-colors hover:bg-white/10 sm:px-4"
-          >
-            Sign In
-          </Link>
-
-          <Link
-            href="/app"
-            className="rounded-full bg-white px-3.5 py-2 font-semibold text-ink transition-transform hover:bg-white/90 active:scale-95 sm:px-4"
+            className="rounded-full bg-white px-4 py-2 font-semibold text-ink transition-transform hover:bg-white/90 active:scale-95"
           >
             Launch app
           </Link>

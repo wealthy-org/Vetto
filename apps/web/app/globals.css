@@ -113,6 +113,81 @@ body { background: var(--bg); color: #f1eeff; font-family: var(--font-sans), sys
 @keyframes pulse-soft { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
 .pulse-soft { animation: pulse-soft 1.6s ease-in-out infinite; }
 
+/* ---- Chat stage motion: entrance, hover, speech bubble, typing dots ---- */
+/* Longhand `translate`/`scale` keep animating independently of the inline
+   `transform` that positions each deck card, so entrance + fan + hover compose. */
+@keyframes deck-in {
+  from { opacity: 0; translate: 0 34px; scale: 0.9; }
+  to   { opacity: 1; translate: 0 0;    scale: 1; }
+}
+.deck-card { animation: deck-in 0.62s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.deck-card > button { transition: scale 0.28s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.28s ease, background-color 0.28s ease, box-shadow 0.28s ease; }
+.deck-card > button:hover { scale: 1.035; }
+.deck-card > button:active { scale: 0.985; }
+
+@keyframes cluster-in {
+  from { opacity: 0; translate: 0 12px; filter: blur(3px); }
+  to   { opacity: 1; translate: 0 0;    filter: blur(0); }
+}
+.cluster-in { animation: cluster-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+@keyframes bubble-in {
+  0%   { opacity: 0; translate: 0 10px; scale: 0.94; }
+  60%  { opacity: 1; scale: 1.015; }
+  100% { opacity: 1; translate: 0 0; scale: 1; }
+}
+.bubble-in { animation: bubble-in 0.42s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+/* Speech-bubble tail: a rotated square tucked under the bubble edge. */
+.bubble-tail::after {
+  content: "";
+  position: absolute;
+  bottom: -6px;
+  left: 26px;
+  width: 13px;
+  height: 13px;
+  background: inherit;
+  border-right: 1px solid var(--line-tail, rgba(255, 255, 255, 0.22));
+  border-bottom: 1px solid var(--line-tail, rgba(255, 255, 255, 0.22));
+  transform: rotate(45deg);
+  border-bottom-right-radius: 3px;
+}
+
+@keyframes typing-dot {
+  0%, 60%, 100% { opacity: 0.25; translate: 0 0; }
+  30%           { opacity: 1;    translate: 0 -3px; }
+}
+.typing-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(241, 238, 255, 0.9);
+  animation: typing-dot 1.15s ease-in-out infinite;
+}
+
+/* The character breathes; hover on the deck nudges him back a little. */
+@keyframes stage-breathe {
+  0%, 100% { translate: 0 0; }
+  50%      { translate: 0 -7px; }
+}
+.stage-breathe { animation: stage-breathe 7s ease-in-out infinite; }
+
+@keyframes chip-row-in { from { opacity: 0; translate: 0 8px; } to { opacity: 1; translate: 0 0; } }
+.chip-row > li { animation: chip-row-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+/* Composer focus ring that follows the shell, not the textarea. */
+.composer-shell { transition: border-color 0.25s ease, box-shadow 0.25s ease, background-color 0.25s ease; }
+.composer-shell:focus-within {
+  border-color: rgba(201, 182, 255, 0.42);
+  box-shadow: 0 0 0 3px rgba(201, 182, 255, 0.1), 0 18px 50px rgba(9, 5, 32, 0.55);
+}
+
+/* Honest status pills used on route cards and the review panel. */
+.badge { @apply inline-flex items-center gap-1 rounded-full px-2 py-[3px] text-[9.5px] font-semibold leading-none; }
+.badge-best { background: rgba(201, 182, 255, 0.16); color: #d8cbff; }
+.badge-fee { background: rgba(244, 179, 156, 0.14); color: #ffc9b3; }
+.badge-live { background: rgba(126, 226, 168, 0.14); color: var(--ok); }
+
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }

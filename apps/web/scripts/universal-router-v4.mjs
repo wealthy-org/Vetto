@@ -4,7 +4,9 @@ import {
   encodeFunctionData,
 } from "viem";
 
-export const ROUTER = "0x204FAca1764B154221e35c0d20aBb3c525710498";
+// Uniswap publishes this UniversalRouter for Robinhood Chain (v2.1.1) and it is
+// the router observed submitting v4 swaps on-chain. See docs/ROUTING_TRUTH_TABLE.md.
+export const ROUTER = "0x8876789976dEcBfCbBbe364623C63652db8C0904";
 export const USDG = "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168";
 export const ZERO = "0x0000000000000000000000000000000000000000";
 
@@ -83,7 +85,9 @@ export function buildUniversalRouterV4Swap({
   minOut,
   deadline,
   nowSeconds = BigInt(Math.floor(Date.now() / 1000)),
+  poolKey: poolKeyOverride,
 }) {
+  const key = poolKeyOverride ?? poolKey;
   if (typeof zeroForOne !== "boolean") {
     throw new Error("zeroForOne must be boolean.");
   }
@@ -113,7 +117,7 @@ export function buildUniversalRouterV4Swap({
     [exactInputSingleType],
     [
       {
-        poolKey,
+        poolKey: key,
         zeroForOne,
         amountIn: input,
         amountOutMinimum: minimumOutput,

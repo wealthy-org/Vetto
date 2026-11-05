@@ -133,10 +133,10 @@ export function Landing() {
                     <span className="block overflow-hidden pb-[0.08em]"><span data-line className="grad block">Every move checked.</span></span>
                   </h1>
                   <p data-hero-fade className="mx-auto mt-6 max-w-xl text-pretty text-[15px] leading-relaxed text-white/65 [text-shadow:0_0_24px_#06041a]">
-                    Ask in plain language. Vetto previews your intent and checks public links. Live swap routes, transaction simulation, and execution are not enabled yet.
+                    Ask in plain language. Vetto reads your intent, quotes live Uniswap v4 pools on Robinhood Chain, checks public links, and simulates the exact transaction. Signing stays with your wallet — and is switched off in this deployment.
                   </p>
                   <div data-hero-fade className="mt-8 flex items-center justify-center gap-3">
-                    <Link href="/app" className="btn btn-primary">Launch app <IconArrow className="h-4 w-4" /></Link>
+                    <Link href="/sign-in" className="btn btn-primary">Launch app <IconArrow className="h-4 w-4" /></Link>
                     <a href="#meet" className="btn btn-ghost bg-ink/60 backdrop-blur">See what he does</a>
                   </div>
                 </div>
@@ -173,7 +173,7 @@ export function Landing() {
         <div className="flex flex-col justify-between gap-8 border-t border-white/8 pt-10 md:flex-row">
           <div><Logo /><p className="mt-3 max-w-xs text-sm text-white/50">You ask. He checks. You decide.</p></div>
           <div className="grid grid-cols-2 gap-x-8 gap-y-8 text-sm sm:gap-x-10">
-            {[["Site", [["Introduction", "#introduction"], ["Security", "#security"], ["What’s live", "#status"]]], ["Product", [["Launch app", "/app"], ["Docs", "/docs"], ["Sign in", "/sign-in"]]]].map(([h, links]) => (
+            {[["Site", [["Introduction", "#introduction"], ["Security", "#security"], ["What’s live", "#status"]]], ["Product", [["Launch app", "/sign-in"], ["Docs", "/docs"], ["Open preview", "/app"]]]].map(([h, links]) => (
               <div key={h as string}><div className="mb-3 text-xs text-white/40">{h as string}</div><ul className="space-y-2">{(links as string[][]).map(([t, href]) => (<li key={t}><Link href={href!} className="text-white/75 hover:text-white">{t}</Link></li>))}</ul></div>
             ))}
           </div>

@@ -101,13 +101,32 @@ interface RateLimitEnvironment {
   NODE_ENV?: string;
   DATABASE_URL?: string;
   RATE_LIMIT_SALT?: string;
+  /** Explicit opt-in for demo/preview deployments without a database. */
+  VETTO_ALLOW_MEMORY_LIMITS?: string;
 }
+
+let warnedMemoryOnly = false;
 
 export function createRateLimiter(environment: RateLimitEnvironment = process.env): RateLimiter {
   if (!environment.DATABASE_URL) {
-    return environment.NODE_ENV === "production"
-      ? new UnavailableRateLimiter("DATABASE_URL is required for production rate limiting.")
-      : new MemoryRateLimiter();
+    if (environment.NODE_ENV !== "production") return new MemoryRateLimiter();
+
+    // A production build without a database would otherwise refuse every request.
+    // Operators may opt into a process-local limiter for a throwaway preview, but
+    // it is never silent: the limitation is logged once at startup.
+    const opted = (environment.VETTO_ALLOW_MEMORY_LIMITS ?? "").trim().toLowerCase();
+    if (opted === "1" || opted === "true" || opted === "on") {
+      if (!warnedMemoryOnly) {
+        warnedMemoryOnly = true;
+        console.warn(
+          "VETTO_ALLOW_MEMORY_LIMITS is on: rate limits are process-local and reset on restart. " +
+            "Not suitable for production traffic; configure DATABASE_URL instead.",
+        );
+      }
+      return new MemoryRateLimiter();
+    }
+
+    return new UnavailableRateLimiter("DATABASE_URL is required for production rate limiting.");
   }
 
   const salt = environment.RATE_LIMIT_SALT;

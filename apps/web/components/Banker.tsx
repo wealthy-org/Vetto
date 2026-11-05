@@ -19,6 +19,104 @@ function detachPointer() {
   document.documentElement.removeEventListener("pointerleave", onLeave);
 }
 
+type Pt = readonly [number, number];
+
+/** Angle of the a→b segment in SVG degrees (0 = pointing right). */
+function angleOf(a: Pt, b: Pt): number {
+  return (Math.atan2(b[1] - a[1], b[0] - a[0]) * 180) / Math.PI;
+}
+
+/**
+ * One arm as two jointed capsule segments (shoulder→elbow→wrist) plus a cuff and a
+ * gloved hand. Drawn as strokes so the elbow join is continuous — the previous hand
+ * written outlines left the raised arm looking detached from the shoulder.
+ */
+function JointedArm({
+  shoulder,
+  elbow,
+  wrist,
+  sleeve,
+  width = 46,
+  gloveScale = 0.62,
+  gloveTilt = 0,
+  className,
+  animate,
+}: {
+  shoulder: Pt;
+  elbow: Pt;
+  wrist: Pt;
+  sleeve: string;
+  width?: number;
+  gloveScale?: number;
+  gloveTilt?: number;
+  className?: string;
+  animate?: boolean;
+}) {
+  const path = `M${shoulder[0]} ${shoulder[1]} L${elbow[0]} ${elbow[1]} L${wrist[0]} ${wrist[1]}`;
+  const forearmAngle = angleOf(elbow, wrist);
+  const cuffAngle = forearmAngle + 90;
+  // The glove path is authored palm-down at (543, 402) with the fingers pointing up.
+  const gloveAngle = forearmAngle + 90 + gloveTilt;
+
+  const upper = (
+    <>
+      <path d={path} fill="none" stroke="#1f1659" strokeWidth={width + 3} strokeLinecap="round" strokeLinejoin="round" />
+      <path d={path} fill="none" stroke={sleeve} strokeWidth={width} strokeLinecap="round" strokeLinejoin="round" />
+    </>
+  );
+  const hand = (
+    <>
+      <g transform={`translate(${wrist[0]} ${wrist[1]}) rotate(${cuffAngle})`}>
+        <rect x={-(width + 8) / 2} y={-7} width={width + 8} height={15} rx={5} fill="#fff" stroke="#cfc8ee" strokeWidth={1.6} />
+      </g>
+      <g transform={`translate(${wrist[0]} ${wrist[1]}) rotate(${gloveAngle}) scale(${gloveScale}) translate(-543 -402)`}>
+        <path
+          d="M502 398 498 332Q496 316 510 316L516 348 518 298Q520 282 534 284L538 342 544 292Q548 276 561 280L560 342 570 310Q578 298 588 306Q590 332 578 374L568 402Z"
+          fill="#f4f1ff"
+          stroke="#cfc8ee"
+          strokeWidth={2.2}
+          strokeLinejoin="round"
+        />
+      </g>
+    </>
+  );
+
+  return (
+    <g className={className}>
+      {animate ? (
+        <>
+          {upper}
+          <g
+            className="forearm"
+            style={{ transformBox: "view-box", transformOrigin: `${elbow[0]}px ${elbow[1]}px` }}
+          >
+            <path
+              d={`M${elbow[0]} ${elbow[1]} L${wrist[0]} ${wrist[1]}`}
+              fill="none"
+              stroke="#1f1659"
+              strokeWidth={width - 2}
+              strokeLinecap="round"
+            />
+            <path
+              d={`M${elbow[0]} ${elbow[1]} L${wrist[0]} ${wrist[1]}`}
+              fill="none"
+              stroke={sleeve}
+              strokeWidth={width - 5}
+              strokeLinecap="round"
+            />
+            {hand}
+          </g>
+        </>
+      ) : (
+        <>
+          {upper}
+          {hand}
+        </>
+      )}
+    </g>
+  );
+}
+
 const MAX_X = 6; // how far a pupil may travel inside the eye (svg units)
 const MAX_Y = 4.5;
 
@@ -139,28 +237,43 @@ export function Banker({ pose = "idle", className = "", fade = true, viewBox = "
           <path d="M314 580L268 596L274 648L318 646Q338 640 334 612Z" fill="#f4f1ff" stroke="#cfc8ee" strokeWidth="1.6" strokeLinejoin="round" transform="rotate(8 300 612)" />
         </g>
 
-        {/* think: right hand raised to the face */}
-        <g className="pose-think" transform="translate(-22 0)">
-          <path d="M376 412C422 402 460 430 470 482L500 566L474 592L440 560L420 370L452 336L472 380L490 520C404 490 372 470 376 412Z" fill={`url(#${id("sleeve")})`} stroke="#1f1659" strokeWidth="1.6" strokeLinejoin="round" />
-          <path d="M416 372L408 304Q404 288 418 288L426 318L430 270Q432 256 444 258L448 316L456 272Q460 258 472 262L470 330L480 304Q488 294 496 302Q496 338 482 372Z" fill="#f4f1ff" stroke="#cfc8ee" strokeWidth="1.6" strokeLinejoin="round" />
-          <rect x="410" y="366" width="76" height="14" rx="5" fill="#fff" stroke="#cfc8ee" strokeWidth="1.4" />
+        {/* think: right hand up beside the chin, elbow tucked in */}
+        <g className="pose-think">
+          <JointedArm
+            shoulder={[378, 414]}
+            elbow={[452, 486]}
+            wrist={[390, 336]}
+            sleeve={`url(#${id("sleeve")})`}
+            width={44}
+            gloveScale={0.66}
+            gloveTilt={-14}
+          />
         </g>
 
-        {/* point: right arm out to the card */}
+        {/* point: right arm out toward the route cards */}
         <g className="pose-point">
-          <path d="M376 412C430 398 482 424 520 470L600 470L606 508L508 540C470 524 430 500 410 540L414 470Z" fill={`url(#${id("sleeve")})`} stroke="#1f1659" strokeWidth="1.6" strokeLinejoin="round" />
-          <path d="M596 462L640 452Q652 452 652 462Q652 470 640 472L636 486Q634 502 616 508L598 510Z" fill="#f4f1ff" stroke="#cfc8ee" strokeWidth="1.6" strokeLinejoin="round" />
-          <rect x="590" y="458" width="16" height="56" rx="6" fill="#fff" stroke="#cfc8ee" strokeWidth="1.4" />
+          <JointedArm
+            shoulder={[378, 414]}
+            elbow={[486, 452]}
+            wrist={[590, 492]}
+            sleeve={`url(#${id("sleeve")})`}
+            width={44}
+            gloveScale={0.66}
+            gloveTilt={10}
+          />
         </g>
 
-        {/* raised waving arm (wave pose) */}
+        {/* wave: right arm raised in greeting, forearm rocks around the elbow */}
         <g className="arm-r-up">
-          <path d="M376 412C430 396 500 440 548 548L498 592C470 544 432 524 410 540L414 470Z" fill={`url(#${id("sleeve")})`} stroke="#1f1659" strokeWidth="1.6" strokeLinejoin="round" />
-          <g className="forearm">
-            <path d="M486 574C478 500 490 432 508 394L566 402C568 452 566 522 560 584Z" fill={`url(#${id("sleeve")})`} stroke="#1f1659" strokeWidth="1.6" strokeLinejoin="round" />
-            <path d="M502 398 498 332Q496 316 510 316L516 348 518 298Q520 282 534 284L538 342 544 292Q548 276 561 280L560 342 570 310Q578 298 588 306Q590 332 578 374L568 402Z" fill="#f4f1ff" stroke="#cfc8ee" strokeWidth="1.6" strokeLinejoin="round" />
-            <rect x="498" y="392" width="74" height="16" rx="6" fill="#fff" stroke="#cfc8ee" strokeWidth="1.6" />
-          </g>
+          <JointedArm
+            shoulder={[378, 414]}
+            elbow={[492, 468]}
+            wrist={[540, 322]}
+            sleeve={`url(#${id("sleeve")})`}
+            width={44}
+            gloveScale={0.68}
+            animate
+          />
         </g>
 
         {/* head (tilts a little per pose) */}

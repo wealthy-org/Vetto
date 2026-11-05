@@ -576,26 +576,31 @@ test("rate limit: 31st request from one IP → 429 + Retry-After; other IPs unaf
   );
 });
 
-test("POST /api/quotes: no executable quote → empty routes + honest message", async () => {
+test("POST /api/quotes: never fabricates a route and never claims executability in tests", async () => {
   const { intent: it } = await j(
-    await intent(
-      post("/api/intent", {
-        text: "swap 10 USDG to ETH",
-      })
-    )
+    await intent(post("/api/intent", { text: "swap 10 USDG to ETH" }))
   );
 
-  const r = await quotes(
-    post("/api/quotes", { intent: it })
-  );
+  const r = await quotes(post("/api/quotes", { intent: it }));
 
   assert.equal(r.status, 200);
 
   const b = await j(r);
 
-  assert.deepEqual(b.routes, []);
+  assert.ok(Array.isArray(b.routes));
   assert.ok(typeof b.message === "string");
-  assert.match(b.message, /quote|route|available/i);
+  assert.match(b.message, /quote|route|available|pool/i);
+
+  // Swap execution is disabled in the test environment, so every returned route
+  // must be display-only and must still carry everything a reviewer needs.
+  for (const route of b.routes) {
+    assert.equal(route.isExecutable, false);
+    assert.match(String(route.executionPathId), /^rh-v4-eth-usdg-/);
+    assert.match(String(route.quoteFingerprint), /^[0-9a-f]{64}$/);
+    assert.ok(BigInt(route.minOutBaseUnits) > 0n);
+    assert.ok(BigInt(route.minOutBaseUnits) <= BigInt(route.expectedOutBaseUnits));
+    assert.equal(route.verifiedPrivacyRelay, undefined);
+  }
 });
 
 test("POST /api/quotes: wrong chain, non-swap, raw address from an LLM, unknown token are rejected", async () => {
@@ -742,25 +747,34 @@ test("POST /api/inspect: rejects SSRF targets and reports possible brand lookali
   );
 });
 
-test("GET /api/capabilities: external capabilities are not falsely verified", async () => {
+test("GET /api/capabilities: only implemented capabilities claim to be verified", async () => {
   const b = await j(await caps());
 
   assert.equal(b.chainId, 4663);
 
-  const ext = b.capabilities.filter((c: any) =>
-    /^(route-|transaction-|private-|wallet-|dapp-|agent-|live-)/.test(c.id)
-  );
+  const byId = new Map<string, any>(b.capabilities.map((c: any) => [c.id, c]));
 
-  assert.ok(
-    ext.length > 0 && ext.every((c: any) => c.status !== "verified")
-  );
+  // Live quotes are the only chain-facing capability proven to work today.
+  assert.equal(byId.get("route-direct")?.status, "verified");
 
-  assert.ok(
-    b.assets.every((a: any) =>
-      ["verified", "unverified"].includes(a.status)
-    )
-  );
+  // Everything that needs infrastructure we do not have must not be verified.
+  for (const id of [
+    "route-split",
+    "route-solver",
+    "route-rfq",
+    "private-relay",
+    "dapp-sandbox",
+    "agent-tasks",
+    "live-browser",
+    "transaction-prepare",
+    "execution-history",
+  ]) {
+    assert.notEqual(byId.get(id)?.status, "verified", `${id} must not be verified`);
+  }
 
+  assert.equal(byId.get("private-relay")?.status, "unavailable");
+
+  assert.ok(b.assets.every((a: any) => ["verified", "unverified"].includes(a.status)));
   assert.ok(b.assets.some((a: any) => a.symbol === "ETH"));
   assert.ok(b.assets.some((a: any) => a.symbol === "USDG"));
 });

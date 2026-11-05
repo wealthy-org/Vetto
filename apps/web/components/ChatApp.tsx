@@ -4,42 +4,86 @@ import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { english } from "viem/accounts";
 import { findAsset } from "@vetto/asset-registry";
-import { formatUnits, parseIntent, type Intent, type ParseContext, type ParseResult } from "@vetto/intent-parser";
+import {
+  parseIntent,
+  type Intent,
+  type ParseContext,
+  type ParseResult,
+} from "@vetto/intent-parser";
 import { capabilityById, type QuoteResult } from "@vetto/quote-engine";
 import { detectSecret, secretMessage, type RiskReport } from "@vetto/safety-policy";
+import { AccountMenu } from "./AccountMenu";
+import { formatAmount } from "@/lib/format";
 import { Banker } from "./Banker";
 import { Logo, Mark } from "./Logo";
+import { RouteCards } from "./RouteCards";
 import { StatusChip } from "./StatusChip";
-import { SessionStatus } from "./SessionStatus";
-import { WalletBalances } from "./WalletBalances";
+import { SwapReview } from "./SwapReview";
 import { IconArrow, IconLock } from "./icons";
-import { getConnectedWallet } from "@/lib/walletconnect-provider";
 
 type InspectResponse = { host: string | null; report: RiskReport };
-type Msg = { id: number; role: "user" | "banker"; text: string; result?: ParseResult; quote?: QuoteResult; inspect?: InspectResponse; capId?: string };
+type Msg = {
+  id: number;
+  role: "user" | "banker";
+  text: string;
+  /** One-line recap of what the parser understood, shown next to "You ·". */
+  summary?: string;
+  result?: ParseResult;
+  quote?: QuoteResult;
+  inspect?: InspectResponse;
+  capId?: string;
+};
 type HistoryItem = { id: string; prompt: string; createdAt: string };
 type HistoryEntry = { id: string; prompt: string };
 type HistoryMode = "loading" | "preview" | "saved" | "error";
+type TxItem = {
+  id: string;
+  status: "prepared" | "submitted" | "confirmed" | "reverted" | "expired";
+  tokenIn: string;
+  tokenOut: string;
+  amountInBaseUnits: string;
+  expectedOutBaseUnits: string;
+  minOutBaseUnits: string;
+  venueId: string;
+  txHash: string | null;
+  createdAt: string;
+};
 
-const SUGGESTIONS = ["Swap 100 USDG to ETH", "Is fastclaim-hood.xyz safe?", "Mint the NFT at nft-mint-pass.app max 0.01 ETH"];
-const PRIVATE_COPY = "Private submission is not available yet. No verified privacy relay is connected.";
+const SUGGESTIONS = [
+  "Swap 100 USDG to ETH",
+  "Swap 0.01 ETH to USDG",
+  "Is fastclaim-hood.xyz safe?",
+  "Mint the NFT at nft-mint-pass.app max 0.01 ETH",
+];
+const PRIVATE_COPY =
+  "Private submission is not available yet. No verified privacy relay is connected on Robinhood Chain.";
 const BIP39_WORDS = new Set<string>(english);
 
 class ApiError extends Error {
   readonly code: string | undefined;
-  constructor(message: string, code?: string) { super(message); this.code = code; }
+  constructor(message: string, code?: string) {
+    super(message);
+    this.code = code;
+  }
 }
 const REDACTED = "••• not sent: looked like a secret •••";
 
 async function post<T>(url: string, body: unknown): Promise<T> {
-  const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
   const json = (await res.json()) as T & { error?: string; code?: string };
   if (!res.ok) throw new ApiError(json.error ?? `Request failed (${res.status})`, json.code);
   return json;
 }
 
 const urlOf = (i: Intent) => ("url" in i && i.url ? i.url : undefined);
-const CAP_FOR: Partial<Record<Intent["kind"], string>> = { "agent-task": "agent-tasks", "live-browser": "live-browser" };
+const CAP_FOR: Partial<Record<Intent["kind"], string>> = {
+  "agent-task": "agent-tasks",
+  "live-browser": "live-browser",
+};
 
 export function ChatApp() {
   const params = useSearchParams();
@@ -53,49 +97,79 @@ export function ChatApp() {
   const [historyMode, setHistoryMode] = useState<HistoryMode>("loading");
   const [historyError, setHistoryError] = useState("");
   const [historyAction, setHistoryAction] = useState<string | null>(null);
+  const [transactions, setTransactions] = useState<TxItem[]>([]);
+  const [txRefresh, setTxRefresh] = useState(0);
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const seq = useRef(0);
   const endRef = useRef<HTMLDivElement>(null);
   const historyTriggerRef = useRef<HTMLButtonElement>(null);
   const historyCloseRef = useRef<HTMLButtonElement>(null);
   const historyReadyRef = useRef<Promise<boolean> | null>(null);
-  const [executionBusy, setExecutionBusy] = useState(false);
-  const [executionMessage, setExecutionMessage] = useState("");
 
   // `?ask=` pre-fills the composer. It never auto-sends: nothing runs until the person presses Enter.
-  useEffect(() => { const a = params.get("ask"); if (a) setInput(a.slice(0, 500)); }, [params]);
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [msgs]);
+  useEffect(() => {
+    const a = params.get("ask");
+    if (a) setInput(a.slice(0, 500));
+  }, [params]);
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [msgs]);
+
   useEffect(() => {
     let resolveHistory: (authenticated: boolean) => void = () => {};
     let active = true;
-    historyReadyRef.current = new Promise((resolve) => { resolveHistory = resolve; });
-
-    void fetch("/api/history", { cache: "no-store" }).then(async (response) => {
-      if (response.status === 401) {
-        if (active) setHistoryMode("preview");
-        resolveHistory(false);
-        return;
-      }
-      const body = await response.json() as { items?: HistoryItem[]; error?: string };
-      if (!response.ok) throw new Error(body.error ?? `History request failed (${response.status}).`);
-      if (!Array.isArray(body.items)) throw new Error("The history response was invalid.");
-      if (active) {
-        setSavedHistory(body.items);
-        setHistoryMode("saved");
-      }
-      resolveHistory(true);
-    }).catch((error: unknown) => {
-      if (active) {
-        setHistoryMode("error");
-        setHistoryError(error instanceof Error ? error.message : "Chat history is temporarily unavailable.");
-      }
-      resolveHistory(false);
+    historyReadyRef.current = new Promise((resolve) => {
+      resolveHistory = resolve;
     });
+
+    void fetch("/api/history", { cache: "no-store" })
+      .then(async (response) => {
+        if (response.status === 401) {
+          if (active) setHistoryMode("preview");
+          resolveHistory(false);
+          return;
+        }
+        const body = (await response.json()) as { items?: HistoryItem[]; error?: string };
+        if (!response.ok) throw new Error(body.error ?? `History request failed (${response.status}).`);
+        if (!Array.isArray(body.items)) throw new Error("The history response was invalid.");
+        if (active) {
+          setSavedHistory(body.items);
+          setHistoryMode("saved");
+        }
+        resolveHistory(true);
+      })
+      .catch((error: unknown) => {
+        if (active) {
+          setHistoryMode("error");
+          setHistoryError(
+            error instanceof Error ? error.message : "Chat history is temporarily unavailable.",
+          );
+        }
+        resolveHistory(false);
+      });
 
     return () => {
       active = false;
       resolveHistory(false);
     };
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    void fetch("/api/executions?limit=10", { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) return;
+        const body = (await response.json()) as { executions?: TxItem[] };
+        if (active && Array.isArray(body.executions)) setTransactions(body.executions);
+      })
+      .catch(() => {
+        /* transaction history is best-effort; the review panel stays authoritative */
+      });
+    return () => {
+      active = false;
+    };
+  }, [txRefresh]);
+
   useEffect(() => {
     if (!historyOpen) return;
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -110,17 +184,22 @@ export function ChatApp() {
       historyTriggerRef.current?.focus();
     };
   }, [historyOpen]);
+
   useEffect(() => {
     const clearSavedHistory = () => {
       setSavedHistory([]);
       setHistoryMode("preview");
       setHistoryError("");
+      setTransactions([]);
     };
     window.addEventListener("vetto:session-ended", clearSavedHistory);
     return () => window.removeEventListener("vetto:session-ended", clearSavedHistory);
   }, []);
 
-  const lastUrl = useMemo(() => [...msgs].reverse().map((m) => (m.result ? urlOf(m.result.intent) : undefined)).find(Boolean), [msgs]);
+  const lastUrl = useMemo(
+    () => [...msgs].reverse().map((m) => (m.result ? urlOf(m.result.intent) : undefined)).find(Boolean),
+    [msgs],
+  );
   const lastPair = useMemo(() => {
     const previousSwap = [...msgs].reverse().find((m) => m.result?.intent.kind === "swap");
     const intent = previousSwap?.result?.intent;
@@ -130,17 +209,26 @@ export function ChatApp() {
     const lastResponse = [...msgs].reverse().find((m) => m.role === "banker" && m.result);
     return lastResponse?.result?.pendingIntent;
   }, [msgs]);
-  const parseContext = useMemo<ParseContext>(() => ({
-    ...(lastUrl ? { lastUrl } : {}),
-    ...(lastPair ? { lastPair } : {}),
-    ...(pendingIntent ? { pendingIntent } : {}),
-  }), [lastUrl, lastPair, pendingIntent]);
+  const parseContext = useMemo<ParseContext>(
+    () => ({
+      ...(lastUrl ? { lastUrl } : {}),
+      ...(lastPair ? { lastPair } : {}),
+      ...(pendingIntent ? { pendingIntent } : {}),
+    }),
+    [lastUrl, lastPair, pendingIntent],
+  );
   const preview = useMemo(() => parseIntent(input, parseContext), [input, parseContext]);
   const typedSecret = useMemo(() => detectSecret(input, BIP39_WORDS), [input]);
-  const history = useMemo(() => historyMode === "saved"
-    ? savedHistory.map((item) => ({ id: item.id, prompt: item.prompt }))
-    : [...new Set(msgs.filter((m) => m.role === "user").map((m) => m.text))].reverse().map((prompt) => ({ id: prompt, prompt })),
-  [historyMode, savedHistory, msgs]);
+  const history = useMemo(
+    () =>
+      historyMode === "saved"
+        ? savedHistory.map((item) => ({ id: item.id, prompt: item.prompt }))
+        : [...new Set(msgs.filter((m) => m.role === "user").map((m) => m.text))]
+            .reverse()
+            .map((prompt) => ({ id: prompt, prompt })),
+    [historyMode, savedHistory, msgs],
+  );
+
   const selectHistory = (prompt: string) => {
     setInput(prompt);
     setHistoryOpen(false);
@@ -148,12 +236,34 @@ export function ChatApp() {
   const startNewChat = () => {
     setMsgs([]);
     setInput("");
+    setSelectedPath(null);
     setHistoryOpen(false);
   };
-  const active = useMemo(() => [...msgs].reverse().find((m) => m.result && (m.result.intent.kind === "swap" || m.result.intent.kind === "inspect" || m.capId)), [msgs]);
+  const active = useMemo(
+    () =>
+      [...msgs]
+        .reverse()
+        .find(
+          (m) =>
+            m.result &&
+            (m.result.intent.kind === "swap" || m.result.intent.kind === "inspect" || m.capId),
+        ),
+    [msgs],
+  );
+  const activeRoutes = active?.quote?.routes ?? [];
 
-  const push = (m: Omit<Msg, "id">) => { const id = ++seq.current; setMsgs((p) => [...p, { ...m, id }]); return id; };
-  const patch = (id: number, p: Partial<Msg>) => setMsgs((all) => all.map((m) => (m.id === id ? { ...m, ...p } : m)));
+  // A new quote means a new deck: the previous card selection no longer applies.
+  useEffect(() => {
+    setSelectedPath(null);
+  }, [active?.quote]);
+
+  const push = (m: Omit<Msg, "id">) => {
+    const id = ++seq.current;
+    setMsgs((p) => [...p, { ...m, id }]);
+    return id;
+  };
+  const patch = (id: number, p: Partial<Msg>) =>
+    setMsgs((all) => all.map((m) => (m.id === id ? { ...m, ...p } : m)));
 
   async function saveHistoryPrompt(prompt: string) {
     const authenticated = await historyReadyRef.current;
@@ -164,7 +274,7 @@ export function ChatApp() {
         headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
         body: JSON.stringify({ prompt }),
       });
-      const body = await response.json() as { item?: HistoryItem; error?: string };
+      const body = (await response.json()) as { item?: HistoryItem; error?: string };
       if (response.status === 401) {
         setHistoryMode("preview");
         setSavedHistory([]);
@@ -189,7 +299,7 @@ export function ChatApp() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const result = await response.json() as { deleted?: boolean; deletedCount?: number; error?: string };
+      const result = (await response.json()) as { deleted?: boolean; deletedCount?: number; error?: string };
       if (response.status === 401) {
         setHistoryMode("preview");
         setSavedHistory([]);
@@ -234,159 +344,187 @@ export function ChatApp() {
     try {
       const result = await post<ParseResult>("/api/intent", { text, context: parseContext });
       const i = result.intent;
+      patch(userMsgId, { summary: result.label });
       void saveHistoryPrompt(text);
-      const id = push({ role: "banker", text: i.kind === "clarification" ? i.question : i.kind === "chat" ? result.warning ?? "I can quote swaps, inspect links before you connect, and (soon) run capped burner tasks. What would you like?" : "Here’s how I read that.", result, ...(CAP_FOR[i.kind] ? { capId: CAP_FOR[i.kind]! } : {}) });
+      const id = push({
+        role: "banker",
+        text:
+          i.kind === "clarification"
+            ? i.question
+            : i.kind === "chat"
+              ? result.warning ??
+                "I can quote swaps, inspect links before you connect, and (soon) run capped burner tasks. What would you like?"
+              : "Here’s how I read that.",
+        result,
+        ...(CAP_FOR[i.kind] ? { capId: CAP_FOR[i.kind]! } : {}),
+      });
       if (i.kind === "swap") patch(id, { quote: await post<QuoteResult>("/api/quotes", { intent: i }) });
       if (i.kind === "inspect") patch(id, { inspect: await post<InspectResponse>("/api/inspect", { url: i.url }) });
     } catch (e) {
       if (e instanceof ApiError && e.code === "SECRET_DETECTED") {
-        patch(userMsgId, { text: REDACTED }); // seed phrase terdeteksi server: hapus dari transkrip
+        patch(userMsgId, { text: REDACTED });
         push({ role: "banker", text: e.message });
         return;
       }
-      push({ role: "banker", text: `That didn’t go through: ${e instanceof Error ? e.message : "unknown error"}. Nothing was executed.` });
-    } finally { setBusy(false); }
-  }
-
-  async function executeSwap(msg: Msg | undefined) {
-  const intent = msg?.result?.intent;
-
-  if (!intent || intent.kind !== "swap" || executionBusy) return;
-
-  if (!msg.quote?.routes[0]?.isExecutable) {
-    setExecutionMessage(
-      "Swap execution is disabled. This quote is currently display-only.",
-    );
-    return;
-  }
-
-  if (intent.privateRequested) {
-    setExecutionMessage("Private swap is not supported.");
-    return;
-  }
-
-  setExecutionBusy(true);
-  setExecutionMessage("Running transaction simulation...");
-
-  try {
-    const response = await fetch("/api/execute/prepare", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Idempotency-Key": crypto.randomUUID(),
-      },
-      body: JSON.stringify({ intent }),
-    });
-
-    const prepared = await response.json() as {
-      status?: string;
-      wallet?: string;
-      chainId?: number;
-      transaction?: {
-        to: string;
-        data: string;
-        value: string;
-        deadline: string;
-      };
-      simulation?: {
-        minOutBaseUnits?: string;
-        estimatedGas?: string;
-      };
-      error?: string;
-    };
-
-    if (!response.ok || prepared.status !== "prepared" || !prepared.transaction) {
-      throw new Error(prepared.error ?? "Transaction preparation failed.");
-    }
-
-    const tx = prepared.transaction;
-
-    const confirmed = window.confirm(
-      `Review swap before wallet confirmation:\n\n` +
-      `Pay: ${intent.amountIn} ${intent.tokenIn}\n` +
-      `Receive at least: ${prepared.simulation?.minOutBaseUnits ?? "unavailable"} base units of ${intent.tokenOut}\n` +
-      `Network: Robinhood Chain (4663)\n` +
-      `Destination: ${tx.to}\n\n` +
-      `Continue to wallet confirmation?`,
-    );
-
-    if (!confirmed) {
-      setExecutionMessage("Swap cancelled. No transaction was sent.");
-      return;
-    }
-
-    setExecutionMessage("Connecting wallet...");
-
-    const { provider, address } = await getConnectedWallet();
-
-    if (address.toLowerCase() !== prepared.wallet?.toLowerCase()) {
-      throw new Error("Connected wallet does not match the wallet used for simulation.");
-    }
-
-    if (Number(provider.chainId) !== 4663) {
-      throw new Error("Wallet is not connected to Robinhood Chain.");
-    }
-
-    setExecutionMessage("Waiting for wallet signature...");
-
-    const hash = await provider.request<string>({
-      method: "eth_sendTransaction",
-      params: [{
-        from: address,
-        to: tx.to,
-        data: tx.data,
-        value: `0x${BigInt(tx.value).toString(16)}`,
-      }],
-    });
-
-    if (!hash || !/^0x[0-9a-fA-F]{64}$/.test(hash)) {
-      throw new Error("Wallet did not return a valid transaction hash.");
-    }
-
-    setExecutionMessage(`Transaction submitted: ${hash}. Waiting for confirmation...`);
-
-    const startedAt = Date.now();
-
-    while (Date.now() - startedAt < 120_000) {
-      const receipt = await provider.request<{
-        status?: string;
-        transactionHash?: string;
-      } | null>({
-        method: "eth_getTransactionReceipt",
-        params: [hash],
+      push({
+        role: "banker",
+        text: `That didn’t go through: ${e instanceof Error ? e.message : "unknown error"}. Nothing was executed.`,
       });
-
-      if (receipt) {
-        if (receipt.status !== "0x1") {
-          throw new Error(`Transaction reverted: ${hash}`);
-        }
-
-        setExecutionMessage(`Swap confirmed on Robinhood Chain. Transaction: ${hash}`);
-        return;
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+    } finally {
+      setBusy(false);
     }
-
-    setExecutionMessage(
-      `Transaction submitted but confirmation timed out. Check transaction: ${hash}`,
-    );
-  } catch (error) {
-    setExecutionMessage(
-      error instanceof Error ? error.message : "Swap execution failed.",
-    );
-  } finally {
-    setExecutionBusy(false);
   }
-}
 
   const kindTone = preview.intent.kind === "clarification" ? "text-peach" : "text-lilac";
 
+  const activeOut = findAsset(
+    active?.result?.intent.kind === "swap" ? active.result.intent.tokenOut : "",
+  );
+
+  // The character's line: only ever restates something the app actually measured.
+  const stageLine = useMemo(() => {
+    if (busy) return undefined;
+    if (!active) {
+      return msgs.length > 0
+        ? "I read that. Ask for a swap and the live pools answer here."
+        : "Say what you want. I quote the live pools — never a mock.";
+    }
+    const intent = active.result?.intent;
+    if (intent?.kind === "inspect") {
+      return "Passive link check. Nothing was connected, nothing was signed.";
+    }
+    if (intent?.kind === "swap") {
+      if (!active.quote) return "Asking the pool manager…";
+      if (activeRoutes.length === 0) return active.quote.message;
+      const best = activeRoutes.reduce((a, b) =>
+        BigInt(b.expectedOutBaseUnits) > BigInt(a.expectedOutBaseUnits) ? b : a,
+      );
+      const amountText = formatAmount(best.expectedOutBaseUnits, activeOut?.decimals ?? 0);
+      const symbol = activeOut?.symbol ?? "";
+      return activeRoutes.length === 1
+        ? `One pool answered this size: ${amountText} ${symbol}.`
+        : `${activeRoutes.length} live pools. Best output ${amountText} ${symbol}.`;
+    }
+    if (intent?.kind === "clarification") return "One detail is missing — add it and I'll quote.";
+    return "I can quote live swaps and check links before you connect.";
+  }, [busy, active, activeRoutes, activeOut, msgs.length]);
+
+  // One user message + the reply it produced share a card, like a single exchange.
+  const exchanges = useMemo(() => {
+    const groups: { key: number; user?: Msg; banker?: Msg }[] = [];
+    for (const m of msgs) {
+      const last = groups[groups.length - 1];
+      if (m.role === "user" || !last || last.banker) {
+        groups.push({ key: m.id, ...(m.role === "user" ? { user: m } : { banker: m }) });
+      } else {
+        last.banker = m;
+      }
+    }
+    return groups;
+  }, [msgs]);
+
+  const [showEarlier, setShowEarlier] = useState(false);
+
+  const renderExchange = (group: { key: number; user?: Msg; banker?: Msg }) => (
+    <li
+      key={group.key}
+      className="cluster-in rounded-[22px] border border-white/[.09] bg-white/[.045] p-3 backdrop-blur-md"
+    >
+      {group.user && (
+        <>
+          <p className="text-[10.5px] text-lilac/70">
+            You · {group.user.summary ?? group.user.text.slice(0, 46)}
+          </p>
+          <p className="mt-1 whitespace-pre-wrap break-words text-[12.5px] leading-relaxed text-white/90">
+            {group.user.text}
+          </p>
+        </>
+      )}
+      {group.banker && (
+        <div className={group.user ? "mt-2.5 border-t border-white/[.07] pt-2.5" : ""}>
+          <p className="text-[9.5px] uppercase tracking-[0.14em] text-white/30">Vetto</p>
+          <p className="mt-1 whitespace-pre-wrap break-words text-[12.5px] leading-relaxed text-white/70">
+            {group.banker.text}
+          </p>
+          {group.banker.result &&
+            group.banker.result.intent.kind !== "chat" &&
+            group.banker.result.intent.kind !== "clarification" && (
+              <p className="mt-1.5 inline-block rounded-lg bg-lilac/[.09] px-2 py-1 text-[10.5px] text-lilac/90">
+                {group.banker.result.label}
+              </p>
+            )}
+          {group.banker.result?.intent.kind === "clarification" &&
+            group.banker.result.intent.choices && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {group.banker.result.intent.choices.map((c) => (
+                  <button key={c} type="button" className="chip !py-1 text-[10.5px]" onClick={() => void send(c)}>
+                    {c}
+                  </button>
+                ))}
+              </div>
+            )}
+          {group.banker.capId && <CapNote id={group.banker.capId} />}
+          {group.banker.quote && (
+            <p className="mt-1.5 text-[10.5px] text-white/45">
+              {group.banker.quote.message}{" "}
+              <button type="button" className="underline lg:hidden" onClick={() => setSheet(true)}>
+                Open review
+              </button>
+            </p>
+          )}
+          {group.banker.inspect && (
+            <p className="mt-1.5 text-[10.5px] text-white/45">
+              Passive check done.{" "}
+              <button type="button" className="underline lg:hidden" onClick={() => setSheet(true)}>
+                See findings
+              </button>
+            </p>
+          )}
+        </div>
+      )}
+    </li>
+  );
+
+  const renderTranscript = (mode: "recent" | "all") => {
+    const shown = mode === "all" || showEarlier ? exchanges : exchanges.slice(-1);
+    const hidden = exchanges.length - shown.length;
+    return (
+      <>
+        {msgs.length === 0 && (
+          <div className="rounded-[22px] border border-white/[.07] bg-white/[.03] p-3 text-[12px] leading-relaxed text-white/50">
+            Ask in your own words. I’ll show how I read it, quote real routes, simulate, then hand the signature to
+            your wallet.
+          </div>
+        )}
+        {hidden > 0 && (
+          <button
+            type="button"
+            onClick={() => setShowEarlier(true)}
+            className="mb-2 text-[10.5px] text-white/35 transition-colors hover:text-white/70"
+          >
+            + {hidden} earlier {hidden === 1 ? "message" : "messages"}
+          </button>
+        )}
+        <ol className="space-y-2.5">{shown.map(renderExchange)}</ol>
+        {busy && <p className="mt-2 text-[11px] text-white/35 pulse-soft">Reading…</p>}
+        {mode === "all" && <div ref={endRef} />}
+      </>
+    );
+  };
+
   return (
-    <div className="flex h-[100svh] min-w-0 flex-col">
-      <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b-[0.5px] border-white/[0.035] px-3 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))] text-xs sm:flex-nowrap sm:px-4 sm:py-3 sm:text-sm">
-        <div className="flex items-center gap-4"><Link href="/"><Logo /></Link><span className="chip hidden sm:inline-flex"><i className="h-2 w-2 rounded-full bg-mint" />Robinhood Chain</span></div>
-        <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-end sm:gap-4">
+    <div className="flex h-[100svh] min-w-0 flex-col overflow-hidden bg-ink">
+      <header className="flex items-center justify-between gap-3 border-b border-white/[.05] px-3 py-2 sm:px-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <Link href="/" aria-label="VETTO home">
+            <Logo />
+          </Link>
+          <span className="chip hidden !border-lilac/20 !py-1 text-[11px] text-white/70 sm:inline-flex">
+            <i className="h-1.5 w-1.5 rounded-full bg-mint" />
+            Robinhood Chain
+          </span>
+        </div>
+        <div className="flex items-center gap-2 sm:gap-3">
           <button
             ref={historyTriggerRef}
             type="button"
@@ -394,134 +532,329 @@ export function ChatApp() {
             aria-label={`Open chat history (${history.length})`}
             aria-haspopup="dialog"
             aria-expanded={historyOpen}
-            className="text-sm text-white/70 hover:text-white lg:hidden"
+            className="text-xs text-white/60 hover:text-white lg:hidden"
           >
-            History <span className="text-white/40">({history.length})</span>
+            History <span className="text-white/35">({history.length})</span>
           </button>
-          <WalletBalances />
-          <SessionStatus />
-          <Link href="/docs" className="hidden text-white/70 hover:text-white sm:inline">Docs</Link>
+          <AccountMenu />
+          <Link href="/docs" className="hidden text-xs text-white/60 hover:text-white sm:inline">
+            Docs
+          </Link>
         </div>
       </header>
 
-      <div className="grid min-h-0 min-w-0 flex-1 lg:grid-cols-[230px_minmax(0,1fr)_340px]">
-        {/* LEFT RAIL */}
-        <nav className="hidden overflow-y-auto border-r-[0.5px] border-white/[0.035] p-4 text-sm lg:block" aria-label="Chats and history">
-          <button type="button" onClick={startNewChat} className="btn btn-ghost mb-5 w-full">New chat</button>
-          <HistoryContent
-            history={history}
-            savedHistory={savedHistory}
-            mode={historyMode}
-            error={historyError}
-            action={historyAction}
-            onSelect={selectHistory}
-            onDelete={confirmDeleteHistoryItem}
-            onClear={confirmClearSavedHistory}
-          />
-        </nav>
+      <div className="grid min-h-0 min-w-0 flex-1 lg:grid-cols-[minmax(0,296px)_minmax(0,1fr)_minmax(0,356px)]">
+        {/* LEFT — conversation, history, transactions */}
+        <aside
+          aria-label="Conversation"
+          className="hidden min-h-0 flex-col overflow-y-auto border-r border-white/[.05] px-4 py-4 lg:flex"
+        >
+          <p className="text-[10.5px] uppercase tracking-[0.14em] text-white/30">VETTO · your DeFi banker</p>
+          <h1 className="h-display mt-2 text-[25px] leading-[1.06] text-white">
+            Say what you want.
+            <br />
+            <span className="grad">I find the way.</span>
+          </h1>
+          <p className="mt-2 text-[11.5px] leading-relaxed text-white/40">
+            Live quotes, a simulation, then your wallet decides. Nothing moves on its own.
+          </p>
 
-        {historyOpen && (
-          <div className="fixed inset-0 z-50 lg:hidden" role="presentation">
-            <button
-              type="button"
-              onClick={() => setHistoryOpen(false)}
-              aria-label="Close chat history"
-              className="absolute inset-0 bg-black/65"
+          <div className="mt-4">{renderTranscript("recent")}</div>
+
+          <div className="mt-6">
+            <HistoryContent
+              history={history}
+              savedHistory={savedHistory}
+              mode={historyMode}
+              error={historyError}
+              action={historyAction}
+              onSelect={selectHistory}
+              onDelete={confirmDeleteHistoryItem}
+              onClear={confirmClearSavedHistory}
+              onNewChat={startNewChat}
             />
-            <aside
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="mobile-history-title"
-              className="relative flex h-full w-[min(22rem,88vw)] flex-col overflow-y-auto border-r border-white/10 bg-panel p-4 shadow-2xl"
-            >
-              <div className="mb-5 flex items-center justify-between">
-                <h2 id="mobile-history-title" className="font-semibold">Chat history</h2>
-                <button
-                  ref={historyCloseRef}
-                  type="button"
-                  onClick={() => setHistoryOpen(false)}
-                  aria-label="Close chat history"
-                  className="rounded-lg px-3 py-2 text-white/60 hover:bg-white/[.06] hover:text-white"
-                >
-                  Close
-                </button>
-              </div>
-              <button type="button" onClick={startNewChat} className="btn btn-ghost mb-5 w-full">New chat</button>
-              <HistoryContent
-                history={history}
-                savedHistory={savedHistory}
-                mode={historyMode}
-                error={historyError}
-                action={historyAction}
-                onSelect={selectHistory}
-                onDelete={confirmDeleteHistoryItem}
-                onClear={confirmClearSavedHistory}
-              />
-            </aside>
           </div>
-        )}
 
-        {/* CENTER */}
+          <TransactionsList items={transactions} />
+        </aside>
+
+        {/* CENTER — stage, suggestions, composer */}
         <main className="flex min-h-0 min-w-0 flex-col">
-          <div className="flex-1 overflow-y-auto px-4 py-6">
-            {msgs.length === 0 ? (
-              <div className="mx-auto flex h-full max-w-lg flex-col items-center justify-center text-center">
-                <Banker pose="wave" className="h-56 w-auto" />
-                <h1 className="h-display mt-2 text-4xl">What would you like to do?</h1>
-                <p className="mt-3 text-sm text-white/55">Type it the way you’d say it. I’ll show how I read it before anything runs.</p>
-                <ul className="mt-5 flex flex-wrap justify-center gap-2">{SUGGESTIONS.map((s) => (<li key={s}><button type="button" className="chip" onClick={() => setInput(s)}>{s}</button></li>))}</ul>
+          <div className="relative hidden min-h-0 flex-1 overflow-hidden lg:block" aria-hidden={msgs.length === 0}>
+            <div className="stage-glow pointer-events-none absolute inset-0" />
+            <div className="stage-vignette pointer-events-none absolute inset-0" />
+
+            <Banker
+              pose={busy ? "think" : "idle"}
+              className="stage-breathe absolute bottom-[-6%] left-1/2 h-[min(86%,620px)] w-auto -translate-x-1/2"
+            />
+
+            <StageBubble text={stageLine} busy={busy} />
+
+            {activeRoutes.length > 0 && (
+              <div className="absolute inset-x-0 bottom-3 z-20 px-6">
+                <div
+                  aria-hidden
+                  className="pointer-events-none absolute inset-x-6 bottom-4 h-32 rounded-[40px] bg-[radial-gradient(ellipse_at_50%_60%,rgba(104,68,224,.34),transparent_70%)] blur-[2px]"
+                />
+                <RouteCards
+                  routes={activeRoutes}
+                  selectedPath={selectedPath ?? activeRoutes[0]?.executionPathId ?? null}
+                  onSelect={setSelectedPath}
+                  outSymbol={activeOut?.symbol ?? ""}
+                  outDecimals={activeOut?.decimals ?? 0}
+                />
+                <p className="mt-1.5 text-center text-[10px] text-white/30">
+                  {activeRoutes.length === 1
+                    ? "1 live route · tap it to review"
+                    : `${activeRoutes.length} live routes · tap a card to review`}
+                </p>
               </div>
-            ) : (
-              <ol className="mx-auto max-w-2xl space-y-4">
-                {msgs.map((m) => (
-                  <li key={m.id} className={`step-in flex gap-3 ${m.role === "user" ? "justify-end" : ""}`}>
-                    {m.role === "banker" && <span className="mt-1 grid h-8 w-8 shrink-0 place-items-center rounded-full chat-glass"><Mark size={18} /></span>}
-                    <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${m.role === "user" ? "bg-white/10" : "chat-glass"}`}>
-                      <p>{m.text}</p>
-                      {m.result && m.result.intent.kind !== "chat" && m.result.intent.kind !== "clarification" && <p className="mt-2 rounded-lg bg-white/[.05] px-3 py-2 text-xs text-lilac">{m.result.label}</p>}
-                      {m.result?.intent.kind === "clarification" && m.result.intent.choices && (
-                        <div className="mt-3 flex flex-wrap gap-2">{m.result.intent.choices.map((c) => (<button key={c} type="button" className="chip" onClick={() => void send(c)}>{c}</button>))}</div>
-                      )}
-                      {m.capId && <CapNote id={m.capId} />}
-                      {m.quote && <p className="mt-2 text-xs text-white/60">{m.quote.message} <button type="button" className="underline lg:hidden" onClick={() => setSheet(true)}>Open review</button></p>}
-                      {m.inspect && <p className="mt-2 text-xs text-white/60">Passive check done. <button type="button" className="underline lg:hidden" onClick={() => setSheet(true)}>See findings</button></p>}
-                    </div>
-                  </li>
-                ))}
-                {busy && <li className="pl-11 text-xs text-white/40 pulse-soft">Reading…</li>}
-                <div ref={endRef} />
-              </ol>
             )}
           </div>
 
-          <form className="border-t-[0.5px] border-white/[0.035] px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3" onSubmit={(e) => { e.preventDefault(); void send(input); }}>
-            <div className="mx-auto max-w-2xl">
-              <p aria-live="polite" className={`mb-2 min-h-[1.25rem] truncate text-xs ${kindTone}`}>{typedSecret ? <span className="text-coral">{secretMessage(typedSecret)}</span> : input.trim() ?<><span className="text-white/40">I read this as: </span>{preview.label}</> : <span className="text-white/35">{preview.label}</span>}</p>
-              <div className="chat-glass flex items-end gap-2 rounded-2xl p-2">
-                <label htmlFor="composer" className="sr-only">Your request</label>
-                <textarea id="composer" rows={1} value={input} maxLength={500} placeholder="Swap 100 USDG to ETH…" onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void send(input); } }}
-                  className="max-h-40 min-h-[3rem] min-w-0 flex-1 resize-none bg-transparent px-3 py-3 text-[14px] leading-6 text-white outline-none placeholder:text-white/30 focus-visible:outline-none" />
-                <button type="button" aria-disabled="true" aria-pressed={privNote} onClick={() => setPrivNote((v) => !v)} title="Private submission" className="chip !h-10 shrink-0 cursor-not-allowed opacity-60"><IconLock className="h-3.5 w-3.5" /> Private</button>
-                <button type="submit" disabled={busy || !input.trim() || !!typedSecret} aria-label="Send" className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white text-ink transition-opacity disabled:opacity-40"><IconArrow className="h-4 w-4" /></button>
-              </div>
-              {privNote && <p className="mt-2 text-xs text-white/50">{PRIVATE_COPY}</p>}
-              <p className="mt-2 text-[11px] text-white/30">Enter sends · Shift+Enter adds a line. Nothing moves without your wallet confirmation.</p>
+          {/* mobile transcript */}
+          <div className="min-h-0 flex-1 overflow-y-auto px-3.5 py-4 lg:hidden">{renderTranscript("all")}</div>
+
+          <div className="border-t border-white/[.05] px-3 pb-[max(0.85rem,env(safe-area-inset-bottom))] pt-2.5 sm:px-5">
+            <div className="mx-auto max-w-[640px]">
+              {activeRoutes.length > 0 && (
+                <div className="mb-2 lg:hidden">
+                  <RouteCards
+                    variant="strip"
+                    routes={activeRoutes}
+                    selectedPath={selectedPath ?? activeRoutes[0]?.executionPathId ?? null}
+                    onSelect={setSelectedPath}
+                    outSymbol={activeOut?.symbol ?? ""}
+                    outDecimals={activeOut?.decimals ?? 0}
+                  />
+                </div>
+              )}
+
+              <ul className="chip-row mb-2 flex gap-1.5 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                {SUGGESTIONS.map((s, i) => (
+                  <li key={s} className="shrink-0" style={{ animationDelay: `${i * 60}ms` }}>
+                    <button
+                      type="button"
+                      onClick={() => setInput(s)}
+                      className="whitespace-nowrap rounded-full border border-white/[.09] bg-white/[.04] px-3 py-1.5 text-[11px] text-white/60 transition-all duration-200 hover:-translate-y-px hover:border-white/25 hover:text-white"
+                    >
+                      {s}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+
+              <p aria-live="polite" className={`mb-1.5 min-h-[1rem] truncate px-1 text-[10.5px] ${kindTone}`}>
+                {typedSecret ? (
+                  <span className="text-coral">{secretMessage(typedSecret)}</span>
+                ) : input.trim() ? (
+                  <>
+                    <span className="text-white/30">I read this as: </span>
+                    {preview.label}
+                  </>
+                ) : (
+                  <span className="text-white/25">{preview.label}</span>
+                )}
+              </p>
+
+              <form
+                className="composer-shell rounded-[20px] border border-white/[.1] bg-[#150f3a]/92 backdrop-blur-md"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void send(input);
+                }}
+              >
+                <label htmlFor="composer" className="sr-only">
+                  Your request
+                </label>
+                <textarea
+                  id="composer"
+                  rows={1}
+                  value={input}
+                  maxLength={500}
+                  placeholder="Ask VETTO: swap 100 USDG to ETH…"
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                      e.preventDefault();
+                      void send(input);
+                    }
+                  }}
+                  className="max-h-32 min-h-[2.4rem] w-full resize-none bg-transparent px-3.5 pb-1 pt-2.5 text-[13.5px] leading-5 text-white outline-none placeholder:text-white/30 focus-visible:outline-none"
+                />
+                <div className="flex items-center gap-2 border-t border-white/[.06] px-2.5 py-2">
+                  <span className="mr-auto text-[9.5px] leading-tight text-white/25">
+                    Enter sends · Shift+Enter adds a line
+                  </span>
+                  <button
+                    type="button"
+                    aria-disabled="true"
+                    aria-pressed={privNote}
+                    onClick={() => setPrivNote((v) => !v)}
+                    title="Private submission"
+                    className="inline-flex shrink-0 cursor-not-allowed items-center gap-1.5 rounded-full border border-lilac/25 bg-lilac/[.14] px-3 py-1.5 text-[11px] text-white/75 transition-colors hover:bg-lilac/[.2]"
+                  >
+                    <IconLock className="h-3 w-3" /> Private
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={busy || !input.trim() || !!typedSecret}
+                    aria-label="Send"
+                    className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[linear-gradient(105deg,#f8cfc0,#eeb4ef)] text-[#2a1348] shadow-[0_6px_18px_rgba(238,180,239,.28)] transition-[filter,scale] duration-200 hover:scale-[1.05] hover:brightness-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <IconArrow className="h-4 w-4" />
+                  </button>
+                </div>
+              </form>
+
+              {privNote && <p className="mt-1.5 px-1 text-[10.5px] text-white/45">{PRIVATE_COPY}</p>}
+              <p className="mt-1.5 px-1 text-[10px] text-white/25">
+                Nothing moves without your wallet confirmation. Quotes are live from Uniswap v4 on Robinhood Chain.
+              </p>
             </div>
-          </form>
+          </div>
         </main>
 
-        {/* RIGHT PANEL (bottom sheet on mobile) */}
-        <aside aria-label="Review" className={`fixed inset-x-0 bottom-0 z-40 max-h-[78svh] overflow-y-auto rounded-t-3xl border-t border-white/10 bg-panel p-5 transition-transform duration-300 lg:static lg:max-h-none lg:translate-y-0 lg:rounded-none lg:border-l lg:border-t-0 lg:bg-transparent ${sheet ? "translate-y-0" : "translate-y-full"}`}>
-          <div className="mb-3 flex items-center justify-between lg:hidden"><span className="text-sm font-semibold">Review</span><button type="button" className="text-sm text-white/60" onClick={() => setSheet(false)}>Close</button></div>
+        {/* RIGHT — route review / findings */}
+        <aside
+          aria-label="Review"
+          className={`fixed inset-x-0 bottom-0 z-40 max-h-[82svh] overflow-y-auto rounded-t-3xl border-t border-white/10 bg-panel p-4 transition-transform duration-300 lg:static lg:min-h-0 lg:max-h-none lg:translate-y-0 lg:rounded-none lg:border-l lg:border-t-0 lg:bg-transparent lg:px-4 lg:py-4 ${
+            sheet ? "translate-y-0" : "translate-y-full"
+          }`}
+        >
+          <div className="mb-2 flex items-center justify-between lg:hidden">
+            <span className="text-sm font-semibold">Review</span>
+            <button type="button" className="text-sm text-white/60" onClick={() => setSheet(false)}>
+              Close
+            </button>
+          </div>
           <Panel
             msg={active}
-            onExecute={() => void executeSwap(active)}
-            executionBusy={executionBusy}
-            executionMessage={executionMessage}
+            selectedPath={selectedPath}
+            onSelectPath={setSelectedPath}
+            onRecorded={() => setTxRefresh((value) => value + 1)}
           />
         </aside>
       </div>
+
+      {/* mobile history drawer */}
+      {historyOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/60 lg:hidden"
+          role="presentation"
+          onClick={() => setHistoryOpen(false)}
+        >
+          <aside
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="mobile-history-title"
+            onClick={(event) => event.stopPropagation()}
+            className="relative flex h-full w-[min(22rem,88vw)] flex-col overflow-y-auto border-r border-white/10 bg-panel p-4 shadow-2xl"
+          >
+            <div className="mb-5 flex items-center justify-between">
+              <h2 id="mobile-history-title" className="font-semibold">
+                Chat history
+              </h2>
+              <button
+                ref={historyCloseRef}
+                type="button"
+                onClick={() => setHistoryOpen(false)}
+                aria-label="Close chat history"
+                className="rounded-lg px-3 py-2 text-white/60 hover:bg-white/[.06] hover:text-white"
+              >
+                Close
+              </button>
+            </div>
+            <HistoryContent
+              history={history}
+              savedHistory={savedHistory}
+              mode={historyMode}
+              error={historyError}
+              action={historyAction}
+              onSelect={selectHistory}
+              onDelete={confirmDeleteHistoryItem}
+              onClear={confirmClearSavedHistory}
+              onNewChat={startNewChat}
+            />
+            <TransactionsList items={transactions} />
+          </aside>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StageBubble({ text, busy }: { text: string | undefined; busy: boolean }) {
+  if (!busy && !text) return null;
+  return (
+    <div key={busy ? "busy" : text} className="bubble-in absolute right-4 top-4 z-30 max-w-[240px]">
+      <div className="bubble-tail relative rounded-[16px] border border-white/25 bg-[#f7f4ff] px-3 py-2 text-[11.5px] leading-snug text-[#241747] shadow-[0_16px_38px_rgba(6,3,24,.5)]">
+        {busy ? (
+          <span className="flex items-center gap-1">
+            <span className="typing-dot" style={{ animationDelay: "0ms" }} />
+            <span className="typing-dot" style={{ animationDelay: "160ms" }} />
+            <span className="typing-dot" style={{ animationDelay: "320ms" }} />
+            <span className="ml-1 text-[#59487f]">reading your request…</span>
+          </span>
+        ) : (
+          text
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TransactionsList({ items }: { items: TxItem[] }) {
+  return (
+    <div className="mt-6">
+      <h2 className="mb-2 text-[11px] text-white/40">Transactions</h2>
+      {items.length === 0 ? (
+        <p className="text-[11px] leading-relaxed text-white/25">
+          Signed swaps appear here with their status. Nothing is listed until a wallet has signed it.
+        </p>
+      ) : (
+        <ul className="space-y-1.5">
+          {items.map((item) => {
+            const tone =
+              item.status === "confirmed"
+                ? "text-mint"
+                : item.status === "reverted"
+                  ? "text-coral"
+                  : "text-white/50";
+            const out = findAsset(item.tokenOut);
+            return (
+              <li key={item.id} className="rounded-lg border border-white/[.06] p-2 text-[11px]">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="truncate text-white/70">
+                    {item.tokenIn} → {item.tokenOut}
+                  </span>
+                  <span className={`shrink-0 capitalize ${tone}`}>{item.status}</span>
+                </div>
+                <div className="mt-0.5 flex items-center justify-between gap-2 text-white/35">
+                  <span className="truncate">{item.venueId.replace("rh-v4-eth-usdg-", "pool ")}</span>
+                  <span className="shrink-0">
+                    {out ? `${formatAmount(item.minOutBaseUnits, out.decimals)} min` : ""}
+                  </span>
+                </div>
+                {item.txHash && (
+                  <a
+                    className="mt-1 inline-block text-lilac underline"
+                    href={`https://robinhoodchain.blockscout.com/tx/${item.txHash}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    receipt ↗
+                  </a>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      <p className="mt-2 text-[10.5px] leading-relaxed text-white/25">
+        Status comes from the chain receipt, not from the app.
+      </p>
     </div>
   );
 }
@@ -535,6 +868,7 @@ function HistoryContent({
   onSelect,
   onDelete,
   onClear,
+  onNewChat,
 }: {
   history: HistoryEntry[];
   savedHistory: HistoryItem[];
@@ -544,45 +878,73 @@ function HistoryContent({
   onSelect: (prompt: string) => void;
   onDelete: (item: HistoryItem) => void;
   onClear: () => void;
+  onNewChat: () => void;
 }) {
   return (
     <>
       <div className="mb-2 flex items-center justify-between gap-2">
-        <h2 className="text-xs text-white/40">Recent requests</h2>
-        {mode === "saved" && savedHistory.length > 0 && (
-          <button
-            type="button"
-            onClick={onClear}
-            disabled={action !== null}
-            className="text-[11px] text-white/45 hover:text-peach disabled:opacity-50"
-          >
-            {action === "clear-all" ? "Clearing…" : "Clear all"}
+        <h2 className="text-[11px] text-white/40">Chat history</h2>
+        <div className="flex items-center gap-2">
+          {mode === "saved" && savedHistory.length > 0 && (
+            <button
+              type="button"
+              onClick={onClear}
+              disabled={action !== null}
+              className="text-[10.5px] text-white/40 hover:text-peach disabled:opacity-50"
+            >
+              {action === "clear-all" ? "Clearing…" : "Clear"}
+            </button>
+          )}
+          <button type="button" onClick={onNewChat} className="text-[10.5px] text-lilac hover:text-white">
+            + New
           </button>
-        )}
+        </div>
       </div>
-      {history.length === 0 ? <p className="text-xs text-white/35">{mode === "saved" ? "Your saved requests will appear here." : "Your requests from this session show up here. Sign in to save them."}</p> : (
-        <ul className="space-y-1">{history.slice(0, 20).map((item) => {
-          const savedItem = mode === "saved" ? savedHistory.find((entry) => entry.id === item.id) : undefined;
-          return (
-            <li key={item.id} className="flex items-center gap-1">
-              <button type="button" onClick={() => onSelect(item.prompt)} className="min-w-0 flex-1 truncate rounded-lg px-2 py-1.5 text-left text-white/70 hover:bg-white/[.06]">{item.prompt}</button>
-              {savedItem && (
+
+      {history.length === 0 ? (
+        <p className="text-[11px] leading-relaxed text-white/25">
+          {mode === "saved"
+            ? "Your saved requests will appear here."
+            : "Requests from this session show up here. Sign in to keep them."}
+        </p>
+      ) : (
+        <ul className="space-y-1.5">
+          {history.slice(0, 12).map((item) => {
+            const savedItem = mode === "saved" ? savedHistory.find((entry) => entry.id === item.id) : undefined;
+            return (
+              <li key={item.id} className="flex items-center gap-1">
                 <button
                   type="button"
-                  onClick={() => onDelete(savedItem)}
-                  disabled={action !== null}
-                  aria-label={`Delete saved request: ${savedItem.prompt}`}
-                  className="shrink-0 rounded px-2 py-1 text-xs text-white/35 hover:text-peach disabled:opacity-50"
+                  onClick={() => onSelect(item.prompt)}
+                  className="min-w-0 flex-1 truncate rounded-full border border-white/[.08] bg-white/[.03] px-3 py-1.5 text-left text-[11px] text-white/65 hover:border-white/25 hover:text-white"
                 >
-                  {action === savedItem.id ? "…" : "×"}
+                  {item.prompt}
                 </button>
-              )}
-            </li>
-          );
-        })}</ul>
+                {savedItem && (
+                  <button
+                    type="button"
+                    onClick={() => onDelete(savedItem)}
+                    disabled={action !== null}
+                    aria-label={`Delete saved request: ${savedItem.prompt}`}
+                    className="shrink-0 rounded px-1.5 py-1 text-[11px] text-white/30 hover:text-peach disabled:opacity-50"
+                  >
+                    {action === savedItem.id ? "…" : "×"}
+                  </button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
       )}
-      {mode === "error" || error ? <p role="status" className="mt-2 text-[11px] text-peach">{error || "Saved history is temporarily unavailable."}</p> : null}
-      <p className="mt-6 text-[11px] leading-relaxed text-white/30">{mode === "saved" ? "Saved to your account. Select a request to put it in the composer." : "Preview history lives in this tab only."}</p>
+
+      {(mode === "error" || error) && (
+        <p role="status" className="mt-2 text-[10.5px] text-peach">
+          {error || "Saved history is temporarily unavailable."}
+        </p>
+      )}
+      <p className="mt-2 text-[10.5px] leading-relaxed text-white/25">
+        {mode === "saved" ? "Saved to your account." : "Preview history lives in this tab only."}
+      </p>
     </>
   );
 }
@@ -590,187 +952,48 @@ function HistoryContent({
 function CapNote({ id }: { id: string }) {
   const c = capabilityById(id);
   if (!c) return null;
-  return <p className="mt-2 flex flex-wrap items-center gap-2 text-xs text-white/60"><StatusChip status={c.status} /> {c.label}: {c.note} Nothing was started.</p>;
+  return (
+    <p className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-white/55">
+      <StatusChip status={c.status} /> {c.label}: {c.note} Nothing was started.
+    </p>
+  );
 }
-
-function Row({ k, v, dim }: { k: string; v: string; dim?: boolean }) {
-  return <div className="flex justify-between gap-3 border-t border-white/5 py-2 text-sm"><dt className="text-white/50">{k}</dt><dd className={dim ? "text-white/35" : "font-medium"}>{v}</dd></div>;
-}
-
 
 function Panel({
   msg,
-  onExecute,
-  executionBusy,
-  executionMessage,
+  selectedPath,
+  onSelectPath,
+  onRecorded,
 }: {
   msg: Msg | undefined;
-  onExecute: () => void;
-  executionBusy: boolean;
-  executionMessage: string;
+  selectedPath: string | null;
+  onSelectPath: (executionPathId: string) => void;
+  onRecorded: () => void;
 }) {
   const intent = msg?.result?.intent;
 
   if (!msg || !intent) {
     return (
-      <div className="text-sm text-white/45">
-        <h2 className="mb-2 font-semibold text-white/70">Review</h2>
-        Quotes and safety findings appear here. Amounts, destination
-        and approval scope must be reviewed before anything is signed.
+      <div className="text-[12px] leading-relaxed text-white/45">
+        <h2 className="mb-2 text-[11px] text-white/40">Route review</h2>
+        <div className="rounded-2xl border border-white/[.08] bg-white/[.03] p-4">
+          Ask for a swap and the live routes land here: amount received, minimum at your slippage, gas, and exactly what
+          your wallet will be asked to approve.
+        </div>
       </div>
     );
   }
 
   if (intent.kind === "swap") {
-    const out = findAsset(intent.tokenOut);
-    const tin = findAsset(intent.tokenIn);
-    const quote = msg.quote?.routes[0];
-    const hasQuote = Boolean(quote && out);
-
-    const feeText =
-      quote?.feeEstimatesAvailable === true &&
-      typeof quote.networkFeeEstimate === "string" &&
-      typeof quote.protocolFeeEstimate === "string" &&
-      out
-        ? `${formatUnits(
-            BigInt(quote.networkFeeEstimate) +
-              BigInt(quote.protocolFeeEstimate),
-            out.decimals,
-          )} ${out.symbol} (estimated)`
-        : "Unavailable — not verified";
-
-    const expiryText = quote
-      ? quote.executableUntil
-      : "Unavailable";
-
-    const impactText = quote?.priceImpactBps !== undefined
-      ? `${(quote.priceImpactBps / 100).toFixed(2)}%`
-      : "Unavailable";
-
-    const latencyText = quote?.latencyMs !== undefined
-      ? `${quote.latencyMs} ms`
-      : "Unavailable";
-
     return (
-      <div className="step-in">
-        <h2 className="mb-1 font-semibold">Swap review</h2>
-        <p className="mb-3 text-xs text-lilac">{msg.result?.label}</p>
-
-        <dl>
-          <Row
-            k="You pay"
-            v={`${intent.amountIn} ${intent.tokenIn}`}
-          />
-          <Row
-            k="You receive"
-            v={
-              hasQuote && quote && out
-                ? `${formatUnits(BigInt(quote.expectedOutBaseUnits), out.decimals)} ${out.symbol}`
-                : `— ${intent.tokenOut}`
-            }
-            dim={!hasQuote}
-          />
-          <Row
-            k="Min received"
-            v={
-              hasQuote && quote && out
-                ? `${formatUnits(BigInt(quote.minOutBaseUnits), out.decimals)} ${out.symbol}`
-                : "Unavailable"
-            }
-            dim={!hasQuote}
-          />
-          <Row
-            k="Max slippage"
-            v={`${((intent.slippageBps ?? 50) / 100).toFixed(2)}%${intent.slippageBps === undefined ? " (default)" : ""}`}
-          />
-          <Row
-            k="Venue"
-            v={quote?.provider ?? "Unavailable"}
-            dim={!quote}
-          />
-          <Row
-            k="Estimated fees"
-            v={feeText}
-            dim={!quote?.feeEstimatesAvailable}
-          />
-          <Row
-            k="Price impact"
-            v={impactText}
-            dim={!quote || quote.priceImpactBps === undefined}
-          />
-          <Row
-            k="Quote latency"
-            v={latencyText}
-            dim={!quote || quote.latencyMs === undefined}
-          />
-          <Row
-            k="Quote expiry (UTC)"
-            v={expiryText}
-            dim={!quote}
-          />
-          <Row
-            k="Submission"
-            v={intent.privateRequested ? "Private requested — unavailable" : "Public"}
-          />
-        </dl>
-
-        <div className="mt-4 rounded-xl border border-white/10 bg-white/[.03] p-3 text-xs leading-relaxed text-white/65">
-          <div className="mb-1">
-            <StatusChip status="planned" />
-          </div>
-
-          {msg.quote
-            ? msg.quote.message
-            : "Waiting for quote response."}
-
-          {quote && !quote.isExecutable && (
-            <p className="mt-2 text-peach">
-              Display-only quote. This route cannot execute a swap.
-            </p>
-          )}
-
-          {intent.privateRequested && (
-            <p className="mt-2 text-peach">
-              No verified private submission relay is available.
-              A public route will not be substituted.
-            </p>
-          )}
-
-          {(tin?.status === "unverified" || out?.status === "unverified") && (
-            <p className="mt-2 text-white/45">
-              Token metadata is not verified. Do not rely on this quote.
-            </p>
-          )}
-        </div>
-
-        <button
-          type="button"
-          onClick={onExecute}
-          disabled={
-            executionBusy ||
-            !msg.quote ||
-            !msg.quote.routes[0]?.isExecutable ||
-            intent.privateRequested
-          }
-          className="btn btn-primary mt-4 w-full disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {executionBusy ? "Processing swap..." : "Review and swap"}
-        </button>
-
-        {executionMessage && (
-          <p
-            role="status"
-            aria-live="polite"
-            className="mt-3 break-words text-xs leading-relaxed text-white/65"
-          >
-            {executionMessage}
-          </p>
-        )}
-
-        <p className="mt-2 text-center text-[11px] text-white/35">
-          The wallet will ask for your approval before submitting the transaction.
-        </p>
-      </div>
+      <SwapReview
+        intent={intent}
+        quote={msg.quote}
+        label={msg.result?.label}
+        selectedPath={selectedPath}
+        onSelectPath={onSelectPath}
+        onRecorded={onRecorded}
+      />
     );
   }
 
@@ -778,15 +1001,15 @@ function Panel({
     const report = msg.inspect?.report;
 
     return (
-      <div className="step-in">
-        <h2 className="mb-1 font-semibold">Link check</h2>
-        <p className="mb-3 text-xs text-lilac">{msg.result?.label}</p>
+      <div className="text-[12px]">
+        <h2 className="mb-2 text-[11px] text-white/40">Link check</h2>
+        <p className="mb-2 text-[11px] text-lilac">{msg.result?.label}</p>
 
         {!report ? (
-          <p className="text-sm text-white/50">Checking…</p>
+          <p className="text-white/50">Checking…</p>
         ) : (
           <>
-            <div className="mb-3 flex items-center gap-2">
+            <div className="mb-2 flex items-center gap-2">
               <span
                 className={`status ${
                   report.band === "dangerous"
@@ -798,59 +1021,40 @@ function Panel({
               >
                 {report.band}
               </span>
-              {report.score !== null && (
-                <span className="text-xs text-white/50">
-                  score {report.score}/100
-                </span>
-              )}
+              {report.score !== null && <span className="text-[11px] text-white/45">score {report.score}/100</span>}
             </div>
 
             {report.findings.length === 0 ? (
-              <p className="text-sm text-white/55">
-                No red flags in the checks that ran.
-              </p>
+              <p className="mb-3 text-white/55">No red flags in the checks that ran.</p>
             ) : (
-              <ul className="space-y-2">
+              <ul className="mb-3 space-y-2">
                 {report.findings.map((finding) => (
-                  <li
-                    key={finding.id}
-                    className="rounded-xl border border-white/10 bg-white/[.03] p-3 text-xs"
-                  >
+                  <li key={finding.id} className="rounded-xl border border-white/10 bg-white/[.03] p-2.5 text-[11px]">
                     <div className="font-medium capitalize">
                       {finding.severity}: {finding.title}
                     </div>
-                    <div className="mt-1 text-white/60">
-                      {finding.evidence}
-                    </div>
-                    {finding.uncertainty && (
-                      <div className="mt-1 text-white/40">
-                        Unknown: {finding.uncertainty}
-                      </div>
-                    )}
+                    <div className="mt-1 text-white/55">{finding.evidence}</div>
+                    {finding.uncertainty && <div className="mt-1 text-white/35">Unknown: {finding.uncertainty}</div>}
                   </li>
                 ))}
               </ul>
             )}
 
-            <h3 className="mb-1 mt-4 text-xs text-white/40">Checks run</h3>
-            <ul className="space-y-1 text-xs text-white/70">
+            <h3 className="mb-1 text-[10.5px] text-white/35">Checks run</h3>
+            <ul className="space-y-0.5 text-[11px] text-white/65">
               {report.checksRun.map((check) => (
                 <li key={check}>✓ {check}</li>
               ))}
             </ul>
 
-            <h3 className="mb-1 mt-4 text-xs text-white/40">
-              Not run yet
-            </h3>
-            <ul className="space-y-1 text-xs text-white/50">
+            <h3 className="mb-1 mt-3 text-[10.5px] text-white/35">Not run yet</h3>
+            <ul className="space-y-0.5 text-[11px] text-white/45">
               {report.checksUnavailable.map((check) => (
                 <li key={check}>– {check}</li>
               ))}
             </ul>
 
-            <p className="mt-4 text-[11px] leading-relaxed text-white/40">
-              {report.disclaimer}
-            </p>
+            <p className="mt-3 text-[10.5px] leading-relaxed text-white/30">{report.disclaimer}</p>
           </>
         )}
       </div>
@@ -860,10 +1064,11 @@ function Panel({
   const cap = msg.capId ? capabilityById(msg.capId) : undefined;
 
   return cap ? (
-    <div className="step-in">
-      <h2 className="mb-2 font-semibold">{cap.label}</h2>
+    <div className="step-in text-[12px]">
+      <h2 className="mb-2 text-[11px] text-white/40">Capability</h2>
+      <p className="mb-2 font-semibold text-white">{cap.label}</p>
       <StatusChip status={cap.status} />
-      <p className="mt-3 text-sm text-white/60">{cap.note}</p>
+      <p className="mt-2 text-white/55">{cap.note}</p>
     </div>
   ) : null;
 }

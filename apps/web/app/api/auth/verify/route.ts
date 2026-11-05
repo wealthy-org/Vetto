@@ -3,6 +3,7 @@ import type { PoolClient } from "pg";
 import { verifyMessage, type Address } from "viem";
 import { getPool } from "@/lib/db";
 import { guardJson, isRecord, jsonError, jsonOk } from "@/lib/http";
+import { failureFields } from "@/lib/setup-hints";
 import {
   AUTH_SESSION_TTL_SECONDS,
   createSessionToken,
@@ -10,6 +11,7 @@ import {
   makeSessionCookie,
   normalizeSignature,
   normalizeWalletAddress,
+  normalizeConnector,
   isWalletAuthChainId,
   WALLET_AUTH_CHAIN_IDS,
 } from "@/lib/wallet-auth";
@@ -27,6 +29,8 @@ export async function POST(request: Request) {
   if (!isRecord(guarded.body)) return jsonError(400, "Invalid request.");
 
   const challengeId = guarded.body.challengeId;
+  // Display label for the account chip. Unrecognised values are dropped, not trusted.
+  const connector = normalizeConnector(guarded.body.connector);
   const address = normalizeWalletAddress(guarded.body.address);
   const signature = normalizeSignature(guarded.body.signature);
   if (typeof challengeId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(challengeId) || !address || !signature) {
@@ -49,7 +53,7 @@ export async function POST(request: Request) {
     challenge = result.rows[0];
   } catch (error) {
     console.error("Wallet auth challenge lookup failed:", error instanceof Error ? error.message : error);
-    return jsonError(503, "Wallet sign-in is temporarily unavailable.");
+    return jsonError(503, "Wallet sign-in is temporarily unavailable.", failureFields(error));
   }
   const chainId = challenge ? Number(challenge.chain_id) : null;
   if (!challenge || !isWalletAuthChainId(chainId)) {
@@ -119,14 +123,14 @@ export async function POST(request: Request) {
     }
 
     await transactionClient.query(
-      `insert into user_sessions (id, user_id, token_hash, expires_at)
-       values ($1, $2, $3, $4)`,
-      [sessionId, walletUserId, tokenHash, expiresAt],
+      `insert into user_sessions (id, user_id, token_hash, expires_at, connector)
+       values ($1, $2, $3, $4, $5)`,
+      [sessionId, walletUserId, tokenHash, expiresAt, connector],
     );
     await transactionClient.query(
       `insert into audit_log (user_id, action, decision, meta)
        values ($1, 'auth.wallet.sign_in', 'allow', $2::jsonb)`,
-      [walletUserId, JSON.stringify({ chainId })],
+      [walletUserId, JSON.stringify({ chainId, connector })],
     );
     await transactionClient.query("commit");
     transactionOpen = false;
@@ -139,14 +143,14 @@ export async function POST(request: Request) {
       }
     }
     console.error("Wallet session could not be created:", error instanceof Error ? error.message : error);
-    return jsonError(503, "Wallet sign-in is temporarily unavailable.");
+    return jsonError(503, "Wallet sign-in is temporarily unavailable.", failureFields(error));
   } finally {
     client?.release();
   }
 
   const response = jsonOk({
     authenticated: true,
-    wallet: { address: address.toLowerCase(), chainId },
+    wallet: { address: address.toLowerCase(), chainId, connector },
     expiresAt: expiresAt.toISOString(),
   });
   response.headers.append("Set-Cookie", makeSessionCookie(token));

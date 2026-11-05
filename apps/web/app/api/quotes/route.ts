@@ -16,8 +16,9 @@ import { robinhoodV4QuoteAdapter } from "@/lib/robinhood-v4-quote-adapter";
 export const runtime = "nodejs";
 
 /**
- * Only the Robinhood v4 adapter is registered.
- * Quotes from this adapter are display-only and cannot execute swaps.
+ * Only the Robinhood v4 adapter is registered. It returns one route per
+ * registered pool that actually answered a quote; nothing is invented and no
+ * route is padded to look like a comparison list.
  */
 const ADAPTERS = [robinhoodV4QuoteAdapter] as const;
 
@@ -78,11 +79,5 @@ export async function POST(req: Request) {
     decision: result.routes.length > 0 ? "routes" : "none",
   });
 
-  return jsonOk({
-    ...result,
-    routes: result.routes.map((route) => ({
-      ...route,
-      isExecutable: false,
-    })),
-  });
+  return jsonOk(result);
 }

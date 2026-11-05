@@ -1,4 +1,5 @@
 import { rateLimiter } from "./rate-limit";
+import { failureFields } from "./setup-hints";
 
 const MAX_BODY_BYTES = 4096;
 
@@ -28,7 +29,7 @@ export async function limitClient(req: Request, scope: string, max = 60, windowM
     return rl.ok ? null : jsonError(429, "Too many requests. Try again shortly.", undefined, { "Retry-After": String(rl.retryAfterSec) });
   } catch (error) {
     console.error("API rate-limit store is unavailable:", error);
-    return jsonError(503, "Request protection is temporarily unavailable.");
+    return jsonError(503, "Request protection is temporarily unavailable.", failureFields(error));
   }
 }
 
@@ -37,8 +38,28 @@ export async function limitClient(req: Request, scope: string, max = 60, windowM
  * bounded body, per-client rate limit. Returns the parsed body or a ready-to-send error response.
  * Behind a reverse proxy set APP_ORIGIN (e.g. https://vetto.app) so the origin check stays exact.
  */
+/**
+ * Origin the browser is expected to send back.
+ *
+ * When APP_ORIGIN is configured it wins (exact match, the only option behind a
+ * CDN). Otherwise the origin is derived from the forwarded host so a proxied
+ * deployment (preview domains, reverse proxies) still gets a real same-origin
+ * check instead of silently accepting everything.
+ */
+export function expectedOrigin(req: Request): string {
+  const configured = process.env.APP_ORIGIN?.trim();
+  if (configured) return configured.replace(/\/+$/, "");
+
+  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
+  if (!host) return new URL(req.url).origin;
+
+  const forwardedProto = req.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  const protocol = forwardedProto || new URL(req.url).protocol.replace(":", "");
+  return `${protocol}://${host}`;
+}
+
 export async function guardJson(req: Request, scope: string, max = 30, windowMs = 60_000): Promise<{ body: unknown } | { res: Response }> {
-  const expected = process.env.APP_ORIGIN ?? new URL(req.url).origin;
+  const expected = expectedOrigin(req);
   const origin = req.headers.get("origin");
   if (!origin || origin !== expected) return { res: jsonError(403, "Cross-origin requests are not allowed.") };
   if (!req.headers.get("content-type")?.toLowerCase().startsWith("application/json")) return { res: jsonError(415, "Send application/json.") };

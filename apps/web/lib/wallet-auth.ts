@@ -48,6 +48,24 @@ export function makeSiweMessage(input: {
   ].join("\n");
 }
 
+/** Allowlisted wallet labels. Display only — never an authorization input. */
+export const WALLET_CONNECTORS = [
+  "phantom",
+  "metamask",
+  "rabby",
+  "coinbase",
+  "walletconnect",
+  "injected",
+] as const;
+
+export type WalletConnector = (typeof WALLET_CONNECTORS)[number];
+
+export function normalizeConnector(value: unknown): WalletConnector | null {
+  if (typeof value !== "string") return null;
+  const lower = value.trim().toLowerCase();
+  return (WALLET_CONNECTORS as readonly string[]).includes(lower) ? (lower as WalletConnector) : null;
+}
+
 export function createSessionToken(): string {
   return randomBytes(32).toString("base64url");
 }

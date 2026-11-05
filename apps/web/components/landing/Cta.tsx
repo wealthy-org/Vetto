@@ -79,7 +79,7 @@ export function Cta() {
         </div>
       </div>
       <div data-cta-links className="mt-4 grid gap-3 sm:grid-cols-3">
-        {[["Docs", "Read the manual", "/docs"], ["Status", "See what’s live", "#status"], ["Account", "Sign in", "/sign-in"]].map(([k, t, href]) => (
+        {[["Docs", "Read the manual", "/docs"], ["Status", "See what’s live", "#status"], ["Account", "Launch app", "/sign-in"]].map(([k, t, href]) => (
           <Link key={t} data-cta-link href={href!} className="glass flex items-center justify-between rounded-2xl px-5 py-4 transition-colors hover:bg-white/[.07]"><span><span className="block text-[11px] text-white/45">{k}</span><span className="text-sm font-semibold">{t}</span></span><IconArrow className="h-4 w-4 text-white/50" /></Link>
         ))}
       </div>

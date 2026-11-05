@@ -1,220 +1,234 @@
+import { decodeFunctionResult, encodeFunctionData, getAddress } from "viem";
+
+import type { QuoteAdapter, RouteQuote } from "@vetto/quote-engine";
 
 import {
-  createPublicClient,
-  getAddress,
-  http,
-} from "viem";
+  CONTRACTS,
+  NATIVE_ETH,
+  POOL_VENUES,
+  ROBINHOOD_CHAIN_ID,
+  USDG,
+  rpcClient,
+  rpcUrls,
+  swapExecutionEnabled,
+  V4_QUOTER_QUOTE_ABI,
+  type PoolVenue,
+} from "./robinhood-chain";
+import { fingerprintQuote } from "./quote-fingerprint";
 
-import type {
-  QuoteAdapter,
-  RouteQuote,
-} from "@vetto/quote-engine";
+/**
+ * Real Uniswap v4 quotes on Robinhood Chain.
+ *
+ * One adapter, several registered pools. Every returned route corresponds to an
+ * actual `quoteExactInputSingle` call against a pool key that answered without
+ * reverting; nothing is interpolated or cached from a previous session. When a
+ * pool refuses to quote it is reported as skipped instead of being invented.
+ *
+ * `isExecutable` is only true when the deployment has opted into swap execution
+ * (see swapExecutionEnabled) — a quote can be live and still not be executable.
+ */
 
-const RPC = process.env.ROBINHOOD_RPC_URL_PRIMARY;
-const USDG = process.env.ROBINHOOD_USDG_ADDRESS;
+const SUPPORTED_PAIRS = new Set(["ETH/USDG", "USDG/ETH"]);
 
-const CHAIN_ID = 4663;
+/** Reference trade used to derive a spot-ish rate from real quotes (10 bps of size). */
+const REFERENCE_DIVISOR = 1000n;
 
-const QUOTER = "0x8dc178efb8111bb0973dd9d722ebeff267c98f94";
-const ZERO = "0x0000000000000000000000000000000000000000";
+function isSupportedPair(tokenIn: string, tokenOut: string): boolean {
+  const a = tokenIn.toUpperCase();
+  const b = tokenOut.toUpperCase();
+  if (a === b) return false;
+  return SUPPORTED_PAIRS.has(`${a}/${b}`);
+}
 
-const USDG_VERIFIED =
-  "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168";
+interface VenueQuote {
+  venue: PoolVenue;
+  amountOut: bigint;
+  gasEstimate: bigint;
+  referenceOut: bigint;
+}
 
-const ABI = [
-  {
-    type: "function",
-    name: "quoteExactInputSingle",
-    stateMutability: "nonpayable",
-    inputs: [
-      {
-        name: "params",
-        type: "tuple",
-        components: [
-          {
-            name: "poolKey",
-            type: "tuple",
-            components: [
-              { name: "currency0", type: "address" },
-              { name: "currency1", type: "address" },
-              { name: "fee", type: "uint24" },
-              { name: "tickSpacing", type: "int24" },
-              { name: "hooks", type: "address" },
-            ],
-          },
-          { name: "zeroForOne", type: "bool" },
-          { name: "exactAmount", type: "uint128" },
-          { name: "hookData", type: "bytes" },
-        ],
-      },
-    ],
-    outputs: [
-      { name: "amountOut", type: "uint256" },
-      { name: "gasEstimate", type: "uint256" },
-    ],
-  },
-] as const;
+async function quoteVenue(
+  client: ReturnType<typeof rpcClient>,
+  venue: PoolVenue,
+  zeroForOne: boolean,
+  amountIn: bigint,
+): Promise<VenueQuote> {
+  const referenceInput = amountIn / REFERENCE_DIVISOR > 0n ? amountIn / REFERENCE_DIVISOR : 1n;
 
-const client = RPC
-  ? createPublicClient({
-      transport: http(RPC, {
-        timeout: 8000,
-        retryCount: 0,
-      }),
-    })
-  : null;
+  const call = (amount: bigint) =>
+    client
+      .call({
+        to: CONTRACTS.v4Quoter,
+        data: encodeFunctionData({
+          abi: V4_QUOTER_QUOTE_ABI,
+          functionName: "quoteExactInputSingle",
+          args: [{ poolKey: venue.poolKey, zeroForOne, exactAmount: amount, hookData: "0x" }],
+        }),
+      })
+      .then((result) =>
+        decodeFunctionResult({
+          abi: V4_QUOTER_QUOTE_ABI,
+          functionName: "quoteExactInputSingle",
+          data: result.data ?? "0x",
+        }),
+      );
+
+  const [result, reference] = await Promise.all([call(amountIn), call(referenceInput)]);
+
+  const [amountOut, gasEstimate] = result;
+  const [referenceOut] = reference;
+
+  if (amountOut <= 0n || gasEstimate <= 0n) {
+    throw new Error(`${venue.id}: quoter returned an empty result`);
+  }
+
+  return { venue, amountOut, gasEstimate, referenceOut };
+}
+
+function priceImpactBps(quote: VenueQuote, amountIn: bigint): number | undefined {
+  if (quote.referenceOut <= 0n) return undefined;
+  const referenceInput = amountIn / REFERENCE_DIVISOR > 0n ? amountIn / REFERENCE_DIVISOR : 1n;
+  // rateNow vs rateReference, both in base units of tokenOut per tokenIn.
+  const nowScaled = quote.amountOut * referenceInput;
+  const refScaled = quote.referenceOut * amountIn;
+  if (refScaled <= 0n) return undefined;
+  if (nowScaled >= refScaled) return 0;
+  const bps = Number(((refScaled - nowScaled) * 10_000n) / refScaled);
+  return Number.isFinite(bps) ? bps : undefined;
+}
 
 export const robinhoodV4QuoteAdapter: QuoteAdapter = {
   id: "robinhood-uniswap-v4",
-  status: "preview",
+  status: "verified",
 
   async quote(req, signal): Promise<RouteQuote[]> {
-    if (!client || !USDG) {
-      throw new Error("Robinhood RPC configuration is missing.");
-    }
+    if (signal.aborted) return [];
+    if (req.chainId !== ROBINHOOD_CHAIN_ID) return [];
 
-    if (signal.aborted || req.chainId !== CHAIN_ID) {
-      return [];
-    }
+    // Private submission has no verified relay on this chain: never fake it.
+    if (req.privateRequested) return [];
 
-    // Private submission is not supported by this adapter.
-    if (req.privateRequested) {
-      return [];
-    }
+    if (!isSupportedPair(req.tokenIn, req.tokenOut)) return [];
 
-    const tokenIn = req.tokenIn.toUpperCase();
-    const tokenOut = req.tokenOut.toUpperCase();
-
-    const supportedPair =
-      (tokenIn === "ETH" && tokenOut === "USDG") ||
-      (tokenIn === "USDG" && tokenOut === "ETH");
-
-    if (!supportedPair) {
-      return [];
-    }
-
-    if (getAddress(USDG) !== getAddress(USDG_VERIFIED)) {
-      throw new Error(
-        "USDG address does not match verified token.",
-      );
-    }
-
-    const chainId = await client.getChainId();
-
-    if (chainId !== CHAIN_ID) {
-      throw new Error(`Unexpected chain ID: ${chainId}`);
-    }
-
-    if (signal.aborted) {
-      return [];
+    if (!Number.isInteger(req.slippageBps) || req.slippageBps < 0 || req.slippageBps >= 10_000) {
+      throw new Error("Invalid slippage.");
     }
 
     let amountIn: bigint;
-
     try {
       amountIn = BigInt(req.amountInBaseUnits);
     } catch {
       throw new Error("Invalid input amount.");
     }
 
-    if (
-      amountIn <= 0n ||
-      amountIn >= 1n << 128n
-    ) {
+    if (amountIn <= 0n || amountIn >= 1n << 128n) {
       throw new Error("Input amount is outside uint128 range.");
     }
 
-    if (
-      !Number.isInteger(req.slippageBps) ||
-      req.slippageBps < 0 ||
-      req.slippageBps >= 10000
-    ) {
-      throw new Error("Invalid slippage.");
-    }
+    const zeroForOne = req.tokenIn.toUpperCase() === "ETH";
+    const tokenInSymbol = zeroForOne ? "ETH" : "USDG";
+    const tokenOutSymbol = zeroForOne ? "USDG" : "ETH";
+    const tokenInAddress = zeroForOne ? NATIVE_ETH.address : USDG.address;
+    const tokenOutAddress = zeroForOne ? USDG.address : NATIVE_ETH.address;
 
-    const zeroForOne = tokenIn === "ETH";
-    const slippage = BigInt(req.slippageBps);
-
+    const { primary } = rpcUrls();
+    const client = rpcClient(primary, 8000);
     const started = Date.now();
 
-    const result = await client.readContract({
-      address: QUOTER,
-      abi: ABI,
-      functionName: "quoteExactInputSingle",
-      args: [
-        {
-          poolKey: {
-            currency0: ZERO,
-            currency1: getAddress(USDG),
-            fee: 500,
-            tickSpacing: 10,
-            hooks: ZERO,
-          },
-          zeroForOne,
-          exactAmount: amountIn,
-          hookData: "0x",
-        },
-      ],
-    });
+    const settled = await Promise.allSettled(
+      POOL_VENUES.map((venue) => quoteVenue(client, venue, zeroForOne, amountIn)),
+    );
 
-    if (signal.aborted) {
-      return [];
+    if (signal.aborted) return [];
+
+    const usable = settled.filter(
+      (entry): entry is PromiseFulfilledResult<VenueQuote> => entry.status === "fulfilled",
+    );
+
+    if (usable.length === 0) {
+      const reasons = settled
+        .map((entry) => (entry.status === "rejected" ? String(entry.reason?.message ?? entry.reason) : ""))
+        .filter(Boolean)
+        .join("; ");
+      throw new Error(`No pool answered a quote for this trade. ${reasons}`.slice(0, 300));
     }
 
-    const quoteResult = result as readonly [
-      bigint,
-      bigint,
-    ];
-
-    const expectedOut = quoteResult[0];
-
-    if (
-      expectedOut <= 0n ||
-      expectedOut > (1n << 256n) - 1n
-    ) {
-      return [];
+    let gasPriceWei = 0n;
+    try {
+      gasPriceWei = await client.getGasPrice();
+    } catch {
+      gasPriceWei = 0n;
     }
 
-    const minOut =
-      (expectedOut * (10000n - slippage)) / 10000n;
-
-    if (minOut <= 0n) {
-      return [];
-    }
-
+    const executable = swapExecutionEnabled();
     const now = Date.now();
+    const slippage = BigInt(req.slippageBps);
 
-    return [
-      {
-        quoteId: `rh-v4-${now}`,
-        routeType: "direct",
-        provider: "Uniswap v4 - Robinhood Chain",
+    return usable.map(({ value }) => {
+      const { venue, amountOut, gasEstimate } = value;
+      const minOut = (amountOut * (10_000n - slippage)) / 10_000n;
+      if (minOut <= 0n) {
+        throw new Error(`${venue.id}: minimum received rounds to zero`);
+      }
 
-        tokenIn,
-        tokenOut,
+      // Convert the gas estimate into tokenOut base units using this pool's own
+      // reference rate. Estimates only: the router's real gas usage is measured
+      // during simulation and shown again in the receipt.
+      const gasCostWei = gasPriceWei > 0n ? gasEstimate * gasPriceWei : 0n;
+      let networkFee = 0n;
+      if (gasCostWei > 0n) {
+        if (zeroForOne) {
+          const referenceInput =
+            amountIn / REFERENCE_DIVISOR > 0n ? amountIn / REFERENCE_DIVISOR : 1n;
+          networkFee =
+            value.referenceOut > 0n
+              ? (gasCostWei * value.referenceOut) / referenceInput
+              : 0n;
+        } else {
+          networkFee = gasCostWei;
+        }
+      }
 
+      const f = fingerprintQuote({
+        chainId: ROBINHOOD_CHAIN_ID,
+        venueId: venue.id,
+        tokenIn: tokenInSymbol,
+        tokenOut: tokenOutSymbol,
         amountInBaseUnits: amountIn.toString(),
-        expectedOutBaseUnits: expectedOut.toString(),
         minOutBaseUnits: minOut.toString(),
+        slippageBps: req.slippageBps,
+        router: CONTRACTS.universalRouter.toLowerCase(),
+      });
 
-        // Fee estimates are unavailable until router gas
-        // and fee denomination have been independently verified.
-        feeEstimatesAvailable: false,
-        networkFeeEstimate: null,
-        protocolFeeEstimate: null,
-
-        executableUntil: new Date(
-          now + 15000,
-        ).toISOString(),
-
-        executionPathId:
-          `rh-v4-eth-usdg-${zeroForOne ? "forward" : "reverse"}`,
-
-        // Display-only. Router execution has not been verified.
-        isExecutable: false,
-
+      return {
+        quoteId: `${venue.id}-${now}-${f.slice(0, 8)}`,
+        routeType: "direct",
+        provider: venue.label,
+        tokenIn: tokenInSymbol,
+        tokenOut: tokenOutSymbol,
+        amountInBaseUnits: amountIn.toString(),
+        expectedOutBaseUnits: amountOut.toString(),
+        minOutBaseUnits: minOut.toString(),
+        feeEstimatesAvailable: gasCostWei > 0n,
+        networkFeeEstimate: gasCostWei > 0n ? networkFee.toString() : null,
+        protocolFeeEstimate: gasCostWei > 0n ? "0" : null,
+        priceImpactBps: priceImpactBps(value, amountIn),
+        executableUntil: new Date(now + 15_000).toISOString(),
+        executionPathId: venue.id,
+        isExecutable: executable,
         latencyMs: Date.now() - started,
-      },
-    ];
+        tokenInAddress,
+        tokenOutAddress,
+        venueId: venue.id,
+        venueFeeBps: venue.poolKey.fee === 100 ? 1 : venue.poolKey.fee / 100,
+        gasUnits: gasEstimate.toString(),
+        gasCostWei: gasCostWei.toString(),
+        crossChecked: false,
+        quoteFingerprint: f,
+      } satisfies RouteQuote;
+    });
   },
 };
+
+/** Exposed for tests: the exact pair gate used by the adapter. */
+export const isSupportedPairForTest = isSupportedPair;

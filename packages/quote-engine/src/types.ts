@@ -31,6 +31,22 @@ export interface RouteQuote {
   isExecutable: boolean;
   verifiedPrivacyRelay?: boolean;
   latencyMs?: number;
+
+  /** Checksummed addresses of the traded currencies (symbols stay in tokenIn/tokenOut). */
+  tokenInAddress?: string;
+  tokenOutAddress?: string;
+  /** Registered venue that produced this quote (executionPathId equals this id). */
+  venueId?: string;
+  /** Pool fee in basis points, as configured in the venue registry. */
+  venueFeeBps?: number;
+  /** Gas units returned by the quoter (an estimate, not a measurement). */
+  gasUnits?: string;
+  /** Estimated gas cost in wei of the native currency on the quote chain. */
+  gasCostWei?: string;
+  /** True once two independent RPC providers returned the same quote. */
+  crossChecked?: boolean;
+  /** Hash of the reviewed quote fields; required to prepare a transaction. */
+  quoteFingerprint?: string;
 }
 
 export interface QuoteRequest {
