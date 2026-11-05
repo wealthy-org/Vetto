@@ -42,7 +42,8 @@ sleeve or glove is left over at the hip.
 
 The raised arm is emitted **before** the shirt/vest/lapels in the SVG, so the jacket front
 covers its shoulder end and the limb reads as coming out of the body instead of lying on top
-of it. Its sway (`wave-sway`) rotates the whole group around the shoulder point
+of it. It is drawn as a *single* stroked polyline (not two segments) so the elbow has no seam,
+and its stroke width matches the hanging sleeves so the arm looks as thick as in `idle`. Its sway (`wave-sway`) rotates the whole group around the shoulder point
 (`transform-box: view-box`, `transform-origin: 352px 398px`).
 
 Why not rotate the hanging sleeve instead: rotating `.arm-r` left the idle sleeve and its
@@ -51,7 +52,7 @@ bottom glove visible next to the raised arm, so the figure looked duplicated.
 | Pose | How it is built | Notes |
 | --- | --- | --- |
 | `idle` | hanging sleeves, unchanged | default everywhere |
-| `wave` | dedicated `.pose-wave-arm` (shoulder→elbow→wrist→glove), `.arm-r` hidden, `wave-sway` (1.9 s loop) | used on the landing stage and the agent-task row |
+| `wave` | dedicated `.pose-wave-arm`: one continuous shoulder→elbow→wrist polyline (66u stroke, round joins, width matched to the hanging sleeves) + glove at 0.85 scale; `.arm-r` hidden; `wave-sway` (1.9 s loop) | used on the landing stage and the agent-task row |
 | `think` | `JointedArm` (shoulder → elbow → wrist, stroked as one path) | hand beside the chin while a quote loads |
 | `clasp` | both forearms folded, gloves together | swap/showcase row |
 | `live` | headset overlay | live-browser row |

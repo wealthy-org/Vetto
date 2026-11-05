@@ -239,16 +239,15 @@ export function Banker({ pose = "idle", className = "", fade = true, viewBox = "
             covered by the jacket front — the limb then reads as coming out of the body
             instead of lying on top of it. Only visible in the wave pose. */}
         <g className="pose-wave-arm">
-          {/* shoulder -> elbow: open to the side so the arm reads long, not stubby */}
-          <path d="M392 408 L504 452" fill="none" stroke="#1f1659" strokeWidth={58} strokeLinecap="round" />
-          <path d="M392 408 L504 452" fill="none" stroke={`url(#${id("sleeve")})`} strokeWidth={54} strokeLinecap="round" />
-          {/* elbow -> wrist: tall forearm, hand ends beside the head */}
-          <path d="M504 452 L548 302" fill="none" stroke="#1f1659" strokeWidth={50} strokeLinecap="round" />
-          <path d="M504 452 L548 302" fill="none" stroke={`url(#${id("sleeve")})`} strokeWidth={46} strokeLinecap="round" />
-          <g transform="translate(548 302) rotate(19)">
-            <rect x={-28} y={-8} width={56} height={16} rx={6} fill="#fff" stroke="#cfc8ee" strokeWidth={1.6} />
+          {/* One continuous limb: shoulder -> elbow -> wrist drawn as a single stroked
+              polyline so the elbow has no seam. It is emitted before the shirt/vest/
+              lapels, so the jacket front covers the shoulder end. */}
+          <path d="M394 408 L502 450 L546 300" fill="none" stroke="#1f1659" strokeWidth={70} strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M394 408 L502 450 L546 300" fill="none" stroke={`url(#${id("sleeve")})`} strokeWidth={66} strokeLinecap="round" strokeLinejoin="round" />
+          <g transform="translate(546 298) rotate(19)">
+            <rect x={-36} y={-11} width={72} height={22} rx={8} fill="#fff" stroke="#cfc8ee" strokeWidth={1.8} />
           </g>
-          <g transform="translate(541 298) rotate(19) scale(0.78) translate(-543 -402)">
+          <g transform="translate(541 294) rotate(19) scale(0.85) translate(-543 -402)">
             <path d="M502 398 498 332Q496 316 510 316L516 348 518 298Q520 282 534 284L538 342 544 292Q548 276 561 280L560 342 570 310Q578 298 588 306Q590 332 578 374L568 402Z" fill="#f4f1ff" stroke="#cfc8ee" strokeWidth={2.6} strokeLinejoin="round" />
           </g>
         </g>

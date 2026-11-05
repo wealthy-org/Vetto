@@ -97,7 +97,7 @@ body { background: var(--bg); color: #f1eeff; font-family: var(--font-sans), sys
 .banker[data-pose="wave"] .pose-wave-arm {
   opacity: 1;
   transform-box: view-box;
-  transform-origin: 392px 408px;
+  transform-origin: 396px 410px;
   animation: wave-sway 1.9s ease-in-out infinite;
 }
 .banker[data-pose="wave"] .mouth-open { animation: talk-open 2.6s ease-in-out infinite; }
