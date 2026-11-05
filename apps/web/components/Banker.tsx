@@ -239,14 +239,16 @@ export function Banker({ pose = "idle", className = "", fade = true, viewBox = "
             covered by the jacket front — the limb then reads as coming out of the body
             instead of lying on top of it. Only visible in the wave pose. */}
         <g className="pose-wave-arm">
-          <path d="M352 398 L424 452" fill="none" stroke="#1f1659" strokeWidth={53} strokeLinecap="round" />
-          <path d="M352 398 L424 452" fill="none" stroke={`url(#${id("sleeve")})`} strokeWidth={50} strokeLinecap="round" />
-          <path d="M424 452 L462 356" fill="none" stroke="#1f1659" strokeWidth={43} strokeLinecap="round" />
-          <path d="M424 452 L462 356" fill="none" stroke={`url(#${id("sleeve")})`} strokeWidth={40} strokeLinecap="round" />
-          <g transform="translate(462 356) rotate(21)">
-            <rect x={-25} y={-7} width={50} height={14} rx={5} fill="#fff" stroke="#cfc8ee" strokeWidth={1.5} />
+          {/* shoulder -> elbow: open to the side so the arm reads long, not stubby */}
+          <path d="M392 408 L504 452" fill="none" stroke="#1f1659" strokeWidth={58} strokeLinecap="round" />
+          <path d="M392 408 L504 452" fill="none" stroke={`url(#${id("sleeve")})`} strokeWidth={54} strokeLinecap="round" />
+          {/* elbow -> wrist: tall forearm, hand ends beside the head */}
+          <path d="M504 452 L548 302" fill="none" stroke="#1f1659" strokeWidth={50} strokeLinecap="round" />
+          <path d="M504 452 L548 302" fill="none" stroke={`url(#${id("sleeve")})`} strokeWidth={46} strokeLinecap="round" />
+          <g transform="translate(548 302) rotate(19)">
+            <rect x={-28} y={-8} width={56} height={16} rx={6} fill="#fff" stroke="#cfc8ee" strokeWidth={1.6} />
           </g>
-          <g transform="translate(462 356) rotate(21) scale(0.5) translate(-543 -402)">
+          <g transform="translate(541 298) rotate(19) scale(0.78) translate(-543 -402)">
             <path d="M502 398 498 332Q496 316 510 316L516 348 518 298Q520 282 534 284L538 342 544 292Q548 276 561 280L560 342 570 310Q578 298 588 306Q590 332 578 374L568 402Z" fill="#f4f1ff" stroke="#cfc8ee" strokeWidth={2.6} strokeLinejoin="round" />
           </g>
         </g>
