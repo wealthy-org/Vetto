@@ -14,17 +14,9 @@ import {
   signInWithWalletConnect,
 } from "@/lib/wallet-signin-client";
 import { IconArrow } from "./icons";
+import { WALLET_LOGO } from "./wallet-logos";
 
 const PROJECT_ID = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID;
-
-/** Neutral badges keep the picker readable without borrowing anyone's brand mark. */
-const BADGE: Record<WalletId, { label: string; className: string }> = {
-  phantom: { label: "P", className: "bg-[#ab9ff2] text-[#1b1440]" },
-  metamask: { label: "M", className: "bg-[#f6851b] text-[#231204]" },
-  rabby: { label: "R", className: "bg-[#8697ff] text-[#0d1230]" },
-  coinbase: { label: "C", className: "bg-[#0052ff] text-white" },
-  walletconnect: { label: "WC", className: "bg-[#3b99fc] text-white" },
-};
 
 export function WalletPicker() {
   const router = useRouter();
@@ -88,9 +80,17 @@ export function WalletPicker() {
             >
               <span
                 aria-hidden
-                className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl text-[13px] font-bold ${BADGE[wallet.id].className}`}
+                className="grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-xl bg-white shadow-[0_1px_2px_rgba(0,0,0,.35)] ring-1 ring-black/10"
               >
-                {BADGE[wallet.id].label}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={WALLET_LOGO[wallet.id]}
+                  alt=""
+                  width={28}
+                  height={28}
+                  draggable={false}
+                  className="h-7 w-7 object-contain"
+                />
               </span>
 
               <span className="min-w-0 flex-1">
