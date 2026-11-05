@@ -77,6 +77,9 @@ body { background: var(--bg); color: #f1eeff; font-family: var(--font-sans), sys
 @keyframes blink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(0.08); } }
 @keyframes bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
 @keyframes forearm-wave { 0%, 100% { transform: rotate(-9deg); } 50% { transform: rotate(13deg); } }
+/* The raised arm sways around the shoulder; `rotate` (not `transform`) so the
+   pose's own rotation is not overwritten. */
+@keyframes wave-sway { 0%, 100% { rotate: -7deg; } 50% { rotate: 5deg; } }
 @keyframes talk-open { 0%, 100% { opacity: 0; } 25%, 70% { opacity: 1; } }
 @keyframes talk-smile { 0%, 100% { opacity: 1; } 25%, 70% { opacity: 0; } }
 .banker .eye { transform-box: fill-box; transform-origin: center; animation: blink 5.5s infinite; }
@@ -87,20 +90,19 @@ body { background: var(--bg); color: #f1eeff; font-family: var(--font-sans), sys
 .banker .arm-r-up { opacity: 0; transform-origin: 8% 8%; }
 .banker .forearm { transform-box: fill-box; transform-origin: 33% 100%; }
 .banker .mouth-open { opacity: 0; }
-.banker[data-pose="wave"] .arm-r { opacity: 0; }
-.banker[data-pose="wave"] .arm-r-up { opacity: 1; }
-.banker[data-pose="wave"] .forearm { animation: forearm-wave 1.05s ease-in-out infinite; }
+/* Wave: the right sleeve is the same shape that already attaches correctly at the
+   shoulder, so it is rotated up there instead of drawing a second arm. The forearm
+   rocks around the elbow so the greeting keeps moving. */
+.banker[data-pose="wave"] .arm-r { transform: rotate(-148deg); rotate: -6deg; animation: wave-sway 1.7s ease-in-out infinite; }
 .banker[data-pose="wave"] .mouth-open { animation: talk-open 2.6s ease-in-out infinite; }
 .banker[data-pose="wave"] .mouth-smile { animation: talk-smile 2.6s ease-in-out infinite; }
-.banker .pose-clasp, .banker .pose-think, .banker .pose-point, .banker .headset { opacity: 0; transition: opacity 0.45s ease; }
+.banker .pose-clasp, .banker .pose-think, .banker .headset { opacity: 0; transition: opacity 0.45s ease; }
 .banker .head { transform-box: fill-box; transform-origin: 50% 92%; transition: transform 0.7s cubic-bezier(0.22, 1, 0.36, 1); }
-.banker[data-pose="clasp"] .arm, .banker[data-pose="think"] .arm-r, .banker[data-pose="point"] .arm-r, .banker[data-pose="live"] .arm-r { opacity: 0; }
+.banker[data-pose="clasp"] .arm, .banker[data-pose="think"] .arm-r, .banker[data-pose="live"] .arm-r { opacity: 0; }
 .banker[data-pose="clasp"] .pose-clasp { opacity: 1; }
 .banker[data-pose="think"] .pose-think, .banker[data-pose="live"] .pose-think { opacity: 1; }
-.banker[data-pose="point"] .pose-point { opacity: 1; }
 .banker[data-pose="live"] .headset { opacity: 1; }
 .banker[data-pose="think"] .head { transform: rotate(-5deg); }
-.banker[data-pose="point"] .head { transform: rotate(5deg); }
 .banker[data-pose="live"] .head { transform: rotate(-3deg); }
 .banker[data-pose="clasp"] .head { transform: rotate(2deg); }
 

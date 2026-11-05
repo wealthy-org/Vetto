@@ -20,7 +20,7 @@ const STEPS = [
   { id: "check", Icon: IconShield, Card: SampleCheck, cap: "dapp-sandbox", pose: "idle" as Pose, title: "Inspected before you connect.",
     body: "Vetto currently checks URL policy and DNS only; it does not visit the site. Isolated-browser scans and approval capture are planned.",
     cmd: "is fastclaim-hood.xyz safe?", say: "This is sample data. Passive link checks cannot confirm what a site will do." },
-  { id: "agent", Icon: IconKey, Card: SampleTask, cap: "agent-tasks", pose: "point" as Pose, title: "A capped burner does the clicking.",
+  { id: "agent", Icon: IconKey, Card: SampleTask, cap: "agent-tasks", pose: "wave" as Pose, title: "A capped burner does the clicking.",
     body: "Burner-wallet mint and claim tasks are planned, not available. Any future task must use an explicit spend cap and a separate wallet.",
     cmd: "mint the NFT at nft-mint-pass.app max 0.01 ETH", say: "I can't run mint or claim tasks yet. No wallet action was taken." },
   { id: "live", Icon: IconBrowser, Card: SampleLive, cap: "live-browser", pose: "live" as Pose, title: "Watch it work. Grab the controls.",

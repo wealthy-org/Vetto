@@ -35,21 +35,30 @@ The left column keeps the newest exchange in view; older ones collapse behind
 
 ## Character poses
 
-Arms are drawn by `JointedArm` in `components/Banker.tsx`: two jointed capsule segments
-(shoulder → elbow → wrist) stroked as one path, so the elbow reads as a bend instead of two
-loose shapes, with a cuff perpendicular to the forearm and a gloved hand rotated onto the
-forearm axis.
+Two of the poses no longer draw a second arm. `idle`, `clasp`, `think` and `live` use the
+sleeve shapes that already attach correctly at the shoulder; `wave` **rotates that same
+sleeve up** around its own shoulder origin (`transform-box: fill-box`, `transform-origin`
+near the shoulder seam) and adds a `rotate`-based sway so the greeting keeps moving.
 
-| Pose | Shoulder → elbow → wrist | Notes |
+Why: hand-authored raised arms kept detaching from the shoulder and covering the lapel,
+and the alternate limb hid the white cuff. Rotating the attached sleeve keeps the silhouette
+of the jacket correct for free.
+
+| Pose | How it is built | Notes |
 | --- | --- | --- |
-| `idle` | hanging sleeve, unchanged | default on the stage |
-| `wave` | `378,414 → 492,468 → 540,322` | forearm rocks ±9°/13° around the elbow (`transform-box: view-box`) |
-| `think` | `378,414 → 452,486 → 390,336` | hand beside the chin, used while a quote is in flight |
-| `point` | `378,414 → 486,452 → 590,492` | gestures toward the route deck |
+| `idle` | hanging sleeves, unchanged | default everywhere |
+| `wave` | `rotate(-148deg)` on `.arm-r` + `wave-sway` (4.4 s loop) | used on the landing stage and the agent-task row |
+| `think` | `JointedArm` (shoulder → elbow → wrist, stroked as one path) | hand beside the chin while a quote loads |
+| `clasp` | both forearms folded, gloves together | swap/showcase row |
+| `live` | headset overlay | live-browser row |
 
-Rule of thumb for edits: the wrist must sit far enough from the elbow that the glove (authored
-at 543,402, fingers up) does not overlap the head, and the shoulder must stay inside the jacket
-silhouette so the sleeve appears to come out of the shoulder seam.
+There is **no `point` pose**. Its arm only read as correct when it reached past the right edge
+of the 736-unit viewBox, where the glove was clipped; the one feature that used it (agent
+tasks) is not implemented, so the showcase uses `wave` there instead.
+
+Rule of thumb for edits: keep the shoulder inside the jacket silhouette, keep the wrist far
+enough from the elbow that the glove does not cover the head, and animate with the longhand
+`rotate` / `translate` when a pose already writes `transform`.
 
 ## Motion
 

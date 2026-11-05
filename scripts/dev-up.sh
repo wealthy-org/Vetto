@@ -47,6 +47,13 @@ if [ ! -f "$TOOLS/node_modules/pnpm/bin/pnpm.cjs" ]; then
   echo "  installing pnpm $PNPM_VERSION into $TOOLS"
   npm i --prefix "$TOOLS" "pnpm@$PNPM_VERSION" >/dev/null 2>&1
 fi
+# npm's `node` package drops the binary in node_modules/node/bin; make sure the
+# $TOOLS/bin/node entry point exists even after a fresh install.
+if [ ! -x "$TOOLS/bin/node" ]; then
+  mkdir -p "$TOOLS/bin"
+  NODE_BIN="$(find "$TOOLS/node_modules/node" -name node -type f 2>/dev/null | head -1)"
+  if [ -n "$NODE_BIN" ]; then chmod +x "$NODE_BIN"; ln -sf "$NODE_BIN" "$TOOLS/bin/node"; fi
+fi
 export PATH="$TOOLS/bin:$PATH"
 PNPM="node $TOOLS/node_modules/pnpm/bin/pnpm.cjs"
 echo "  node $("$TOOLS/bin/node" -v) · pnpm $("$PNPM" -v)"

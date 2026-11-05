@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useId, useRef } from "react";
 
-export type Pose = "idle" | "wave" | "clasp" | "point" | "think" | "live";
+export type Pose = "idle" | "wave" | "clasp" | "think" | "live";
 
 /* ---- shared pointer so every Banker on the page follows the same cursor ---- */
 const pointer = { x: 0, y: 0, active: false };
@@ -27,9 +27,14 @@ function angleOf(a: Pt, b: Pt): number {
 }
 
 /**
- * One arm as two jointed capsule segments (shoulder→elbow→wrist) plus a cuff and a
- * gloved hand. Drawn as strokes so the elbow join is continuous — the previous hand
- * written outlines left the raised arm looking detached from the shoulder.
+ * One arm: upper arm and forearm as jointed capsule segments (shoulder→elbow→wrist),
+ * plus a cuff and a gloved hand.
+ *
+ * Drawn as strokes with round joins so the elbow is continuous. The shoulder gets its
+ * own cap in the sleeve colour, otherwise the limb reads as a tube growing out of the
+ * chest instead of coming out of the shoulder seam. The forearm is deliberately thinner
+ * than the upper arm, and the hand is small, so the arm tapers toward the wrist the way
+ * the jacket already does.
  */
 function JointedArm({
   shoulder,
@@ -37,7 +42,7 @@ function JointedArm({
   wrist,
   sleeve,
   width = 46,
-  gloveScale = 0.62,
+  gloveScale = 0.5,
   gloveTilt = 0,
   className,
   animate,
@@ -52,29 +57,71 @@ function JointedArm({
   className?: string;
   animate?: boolean;
 }) {
-  const path = `M${shoulder[0]} ${shoulder[1]} L${elbow[0]} ${elbow[1]} L${wrist[0]} ${wrist[1]}`;
+  const upperWidth = width;
+  const lowerWidth = Math.round(width * 0.82);
+  const outline = "#1f1659";
+
+  const upper = `M${shoulder[0]} ${shoulder[1]} L${elbow[0]} ${elbow[1]}`;
+  const lower = `M${elbow[0]} ${elbow[1]} L${wrist[0]} ${wrist[1]}`;
   const forearmAngle = angleOf(elbow, wrist);
   const cuffAngle = forearmAngle + 90;
-  // The glove path is authored palm-down at (543, 402) with the fingers pointing up.
-  const gloveAngle = forearmAngle + 90 + gloveTilt;
+  // The glove is authored fingers-up with its cuff centred on (543, 402), so rotating it
+  // by (forearm angle + 90°) puts the cuff on the wrist with the hand continuing the arm.
+  const gloveAngle = cuffAngle + gloveTilt;
 
-  const upper = (
+  const shoulderCap = (
     <>
-      <path d={path} fill="none" stroke="#1f1659" strokeWidth={width + 3} strokeLinecap="round" strokeLinejoin="round" />
-      <path d={path} fill="none" stroke={sleeve} strokeWidth={width} strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx={shoulder[0]} cy={shoulder[1]} r={upperWidth / 2 + 1.5} fill={outline} />
+      <circle cx={shoulder[0]} cy={shoulder[1]} r={upperWidth / 2} fill={sleeve} />
     </>
   );
+
+  const upperArm = (
+    <>
+      <path d={upper} fill="none" stroke={outline} strokeWidth={upperWidth + 3} strokeLinecap="round" />
+      <path d={upper} fill="none" stroke={sleeve} strokeWidth={upperWidth} strokeLinecap="round" />
+    </>
+  );
+
+  const forearm = (
+    <>
+      <path d={lower} fill="none" stroke={outline} strokeWidth={lowerWidth + 3} strokeLinecap="round" />
+      <path d={lower} fill="none" stroke={sleeve} strokeWidth={lowerWidth} strokeLinecap="round" />
+    </>
+  );
+
+  // A short crease on the inside of the bend: without it the elbow is one flat capsule.
+  const crease = (
+    <path
+      d={`M${elbow[0] - 9} ${elbow[1] - 2} q9 7 16 4`}
+      fill="none"
+      stroke="rgba(20,12,60,.35)"
+      strokeWidth={3.2}
+      strokeLinecap="round"
+      transform={`rotate(${forearmAngle - 90} ${elbow[0]} ${elbow[1]})`}
+    />
+  );
+
   const hand = (
     <>
       <g transform={`translate(${wrist[0]} ${wrist[1]}) rotate(${cuffAngle})`}>
-        <rect x={-(width + 8) / 2} y={-7} width={width + 8} height={15} rx={5} fill="#fff" stroke="#cfc8ee" strokeWidth={1.6} />
+        <rect
+          x={-(lowerWidth + 9) / 2}
+          y={-7}
+          width={lowerWidth + 9}
+          height={14}
+          rx={5}
+          fill="#fff"
+          stroke="#cfc8ee"
+          strokeWidth={1.5}
+        />
       </g>
       <g transform={`translate(${wrist[0]} ${wrist[1]}) rotate(${gloveAngle}) scale(${gloveScale}) translate(-543 -402)`}>
         <path
           d="M502 398 498 332Q496 316 510 316L516 348 518 298Q520 282 534 284L538 342 544 292Q548 276 561 280L560 342 570 310Q578 298 588 306Q590 332 578 374L568 402Z"
           fill="#f4f1ff"
           stroke="#cfc8ee"
-          strokeWidth={2.2}
+          strokeWidth={2.4}
           strokeLinejoin="round"
         />
       </g>
@@ -85,31 +132,23 @@ function JointedArm({
     <g className={className}>
       {animate ? (
         <>
-          {upper}
+          {shoulderCap}
+          {upperArm}
+          {crease}
           <g
             className="forearm"
             style={{ transformBox: "view-box", transformOrigin: `${elbow[0]}px ${elbow[1]}px` }}
           >
-            <path
-              d={`M${elbow[0]} ${elbow[1]} L${wrist[0]} ${wrist[1]}`}
-              fill="none"
-              stroke="#1f1659"
-              strokeWidth={width - 2}
-              strokeLinecap="round"
-            />
-            <path
-              d={`M${elbow[0]} ${elbow[1]} L${wrist[0]} ${wrist[1]}`}
-              fill="none"
-              stroke={sleeve}
-              strokeWidth={width - 5}
-              strokeLinecap="round"
-            />
+            {forearm}
             {hand}
           </g>
         </>
       ) : (
         <>
-          {upper}
+          {shoulderCap}
+          {upperArm}
+          {forearm}
+          {crease}
           {hand}
         </>
       )}
@@ -221,12 +260,17 @@ export function Banker({ pose = "idle", className = "", fade = true, viewBox = "
         <g className="arm arm-l">
           <path d="M168 412C122 402 84 430 74 482L50 760H130L134 540C140 490 172 470 168 412Z" fill={`url(#${id("sleeve")})`} stroke="#1f1659" strokeWidth="1.6" strokeLinejoin="round" />
           <rect x="50" y="690" width="82" height="14" rx="5" fill="#fff" stroke="#cfc8ee" strokeWidth="1.4" />
-          <path d="M54 704H128L122 758H60Z" fill="#f4f1ff" stroke="#cfc8ee" strokeWidth="1.6" strokeLinejoin="round" />
+          <g transform="translate(90 700) rotate(180) scale(0.5) translate(-543 -402)">
+            <path d="M502 398 498 332Q496 316 510 316L516 348 518 298Q520 282 534 284L538 342 544 292Q548 276 561 280L560 342 570 310Q578 298 588 306Q590 332 578 374L568 402Z" fill="#f4f1ff" stroke="#cfc8ee" strokeWidth="3" strokeLinejoin="round" />
+          </g>
         </g>
         <g className="arm arm-r">
           <path d="M376 412C422 402 460 430 470 482L494 760H414L410 540C404 490 372 470 376 412Z" fill={`url(#${id("sleeve")})`} stroke="#1f1659" strokeWidth="1.6" strokeLinejoin="round" />
           <rect x="412" y="690" width="82" height="14" rx="5" fill="#fff" stroke="#cfc8ee" strokeWidth="1.4" />
-          <path d="M416 704H490L484 758H422Z" fill="#f4f1ff" stroke="#cfc8ee" strokeWidth="1.6" strokeLinejoin="round" />
+          {/* gloved hand continues the sleeve; in the wave pose it rotates up with the arm */}
+          <g transform="translate(452 700) rotate(180) scale(0.5) translate(-543 -402)">
+            <path d="M502 398 498 332Q496 316 510 316L516 348 518 298Q520 282 534 284L538 342 544 292Q548 276 561 280L560 342 570 310Q578 298 588 306Q590 332 578 374L568 402Z" fill="#f4f1ff" stroke="#cfc8ee" strokeWidth="3" strokeLinejoin="round" />
+          </g>
         </g>
 
         {/* clasp: both forearms folded in front, gloves together */}
@@ -240,39 +284,13 @@ export function Banker({ pose = "idle", className = "", fade = true, viewBox = "
         {/* think: right hand up beside the chin, elbow tucked in */}
         <g className="pose-think">
           <JointedArm
-            shoulder={[378, 414]}
-            elbow={[452, 486]}
-            wrist={[390, 336]}
+            shoulder={[398, 466]}
+            elbow={[452, 476]}
+            wrist={[414, 350]}
             sleeve={`url(#${id("sleeve")})`}
-            width={44}
-            gloveScale={0.66}
-            gloveTilt={-14}
-          />
-        </g>
-
-        {/* point: right arm out toward the route cards */}
-        <g className="pose-point">
-          <JointedArm
-            shoulder={[378, 414]}
-            elbow={[486, 452]}
-            wrist={[590, 492]}
-            sleeve={`url(#${id("sleeve")})`}
-            width={44}
-            gloveScale={0.66}
-            gloveTilt={10}
-          />
-        </g>
-
-        {/* wave: right arm raised in greeting, forearm rocks around the elbow */}
-        <g className="arm-r-up">
-          <JointedArm
-            shoulder={[378, 414]}
-            elbow={[492, 468]}
-            wrist={[540, 322]}
-            sleeve={`url(#${id("sleeve")})`}
-            width={44}
-            gloveScale={0.68}
-            animate
+            width={46}
+            gloveScale={0.5}
+            gloveTilt={-6}
           />
         </g>
 

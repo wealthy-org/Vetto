@@ -4,6 +4,10 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Logo } from "./Logo";
+import { IconX } from "./icons";
+
+/** Public profile. Kept in one place so the navbar and footer cannot drift apart. */
+export const X_URL = "https://x.com/vettodefi";
 
 const TABS = [
   { id: "introduction", label: "Introduction" },
@@ -76,6 +80,18 @@ export function Nav() {
           >
             Docs
           </Link>
+
+          {/* Same icon-button treatment as the reference site: 40px square, lilac hairline. */}
+          <a
+            href={X_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="VETTO on X"
+            title="VETTO on X"
+            className="grid h-9 w-9 place-items-center rounded-xl border border-lilac/[.14] text-white/70 transition-[background-color,color,border-color] duration-200 hover:border-lilac/[.26] hover:bg-white/[.05] hover:text-white sm:h-10 sm:w-10"
+          >
+            <IconX className="h-[15px] w-[15px]" />
+          </a>
 
           {/* One entry point: Launch app opens the sign-in desk, which continues to /app. */}
           <Link
