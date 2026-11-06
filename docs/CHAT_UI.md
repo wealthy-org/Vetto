@@ -42,8 +42,10 @@ sleeve or glove is left over at the hip.
 
 The raised arm is emitted **before** the shirt/vest/lapels in the SVG, so the jacket front
 covers its shoulder end and the limb reads as coming out of the body instead of lying on top
-of it. It is drawn as a *single* stroked polyline (not two segments) so the elbow has no seam,
-and its stroke width matches the hanging sleeves so the arm looks as thick as in `idle`. Its sway (`wave-sway`) rotates the whole group around the shoulder point
+of it. It is built from the shared `JointedArm` (one stroked shoulder→elbow→wrist path, round joins,
+so the elbow has no seam); the cuff and glove are rotated from the real forearm angle so the
+hand continues the arm instead of sitting at a crooked angle, and the widths match the hanging
+sleeves so a raised arm never looks thinner than `idle`. Its sway (`wave-sway`) rotates the whole group around the shoulder point
 (`transform-box: view-box`, `transform-origin: 352px 398px`).
 
 Why not rotate the hanging sleeve instead: rotating `.arm-r` left the idle sleeve and its
@@ -52,8 +54,8 @@ bottom glove visible next to the raised arm, so the figure looked duplicated.
 | Pose | How it is built | Notes |
 | --- | --- | --- |
 | `idle` | hanging sleeves, unchanged | default everywhere |
-| `wave` | dedicated `.pose-wave-arm`: one continuous shoulder→elbow→wrist polyline (66u stroke, round joins, width matched to the hanging sleeves) + glove at 0.85 scale; `.arm-r` hidden; `wave-sway` (1.9 s loop) | used on the landing stage and the agent-task row |
-| `think` | `JointedArm` (shoulder → elbow → wrist, stroked as one path) | hand beside the chin while a quote loads |
+| `wave` | `.pose-wave-arm` rendered with the same `JointedArm` geometry as `think` (66u upper arm, cuff + glove rotated from the forearm angle) so the hand follows the arm; `.arm-r` hidden; `wave-sway` (1.9 s loop) | used on the landing stage and the agent-task row |
+| `think` | `JointedArm`, 62u wide with a 0.82 glove (same proportions as `wave`) | hand beside the head while a quote loads |
 | `clasp` | both forearms folded, gloves together | swap/showcase row |
 | `live` | headset overlay | live-browser row |
 

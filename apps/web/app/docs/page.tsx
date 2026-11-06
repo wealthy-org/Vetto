@@ -1,75 +1,92 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { DocsFrame } from "@/components/docs/DocsFrame";
-import { DOCS } from "@/lib/docs-content";
+import { DocBody } from "@/components/docs/DocsBlocks";
+import { DocIcon } from "@/components/docs/doc-icons";
+import type { DocBlock } from "@/lib/docs-content";
 
-export const metadata = { title: "Docs · VETTO" };
+export const metadata: Metadata = {
+  title: "Docs · VETTO",
+  description: "Everything Vetto does, in plain words: live swaps, approvals, link checks, burner tasks and exactly what is not built yet.",
+};
 
-const GROUPS = [...new Set(DOCS.map((doc) => doc.group))];
 const TOC = [
-  { id: "what-youll-find", label: "What you'll find" },
-  { id: "start-here", label: "Start here" },
-  { id: "browse-by-topic", label: "Browse by topic" },
+  { id: "what-vetto-can-do", label: "What Vetto can do" },
+  { id: "the-short-version", label: "The short version" },
+  { id: "ground-rules", label: "Ground rules" },
 ];
 
-export default function DocsPage() {
+const BLOCKS: DocBlock[] = [
+  {
+    k: "hint",
+    tone: "info",
+    text: "**Vetto runs on Robinhood Chain (4663).** Say what you want and Vetto finds the way, quotes the pools that actually answered, and waits for your wallet before anything is signed.",
+  },
+  { k: "h2", id: "what-vetto-can-do", text: "What Vetto can do" },
+  {
+    k: "cards",
+    items: [
+      { icon: "swap", title: "Swaps and routing", href: "/docs/swaps", body: "Live v4 quotes ranked by what you receive. One route is a complete answer." },
+      { icon: "key", title: "Permit2 approvals", href: "/docs/permit2-approval", body: "A separate step, with its own transaction and its own review.", badge: "Planned" },
+      { icon: "shield", title: "Private submission", href: "/docs/private-submission", body: "No verified relay on this chain, so the switch is off and says so.", badge: "Unavailable" },
+      { icon: "search", title: "dApp safety checks", href: "/docs/dapp-checker", body: "Passive URL and DNS checks. Vetto does not open the site." },
+      { icon: "burner", title: "Agent tasks", href: "/docs/agent-tasks", body: "Mints and claims with a capped burner wallet, parsed today, run in Phase 3.", badge: "Planned" },
+      { icon: "browser", title: "Live browser", href: "/docs/live-browser", body: "Watch the session and take the controls. Needs isolated compute first.", badge: "Planned" },
+      { icon: "status", title: "What's live", href: "/docs/status", body: "Every capability, its label, and what that label lets you rely on." },
+    ],
+  },
+  { k: "h2", id: "the-short-version", text: "The short version" },
+  {
+    k: "p",
+    text: "There are no menus to learn. You type what you want, Vetto works out what you mean, shows the options it can actually fill, and you decide. While you type, a line above the chat box tells you how the sentence was read, so nothing is a surprise when you press Enter.",
+  },
+  { k: "h2", id: "ground-rules", text: "Ground rules" },
+  {
+    k: "ul",
+    items: [
+      "Your keys stay in your wallet. Vetto never asks for a seed phrase and rejects one if it is pasted.",
+      "Every swap is re-quoted and simulated before your wallet is asked to sign.",
+      "A capability that is not built is labelled **Planned** or **Unavailable** — never simulated to look live.",
+      "Nothing executes without your confirmation, and status only becomes confirmed when the chain returns a receipt.",
+    ],
+  },
+];
+
+export default function DocsIndexPage() {
   return (
-    <DocsFrame toc={TOC}>
-      <div className="mb-4 text-xs font-medium text-lilac">Vetto docs</div>
-      <h1 className="h-display max-w-3xl text-4xl sm:text-5xl md:text-6xl">
-        Everything Vetto does, <span className="grad">in plain words.</span>
-      </h1>
-      <p className="mt-5 max-w-2xl text-base leading-relaxed text-white/65 sm:text-lg">
-        Learn how Vetto works, what is available today, and where the safety boundaries are.
-        Each topic has its own page so you can jump straight to what you need.
-      </p>
-      <div className="mt-7 flex flex-wrap gap-3">
-        <Link href="/app" className="btn btn-primary">Open the app <span aria-hidden="true">→</span></Link>
-        <Link href={`/docs/${DOCS[0]!.id}`} className="btn btn-ghost">Start with the basics</Link>
-      </div>
-
-      <section id="what-youll-find" className="mt-10 scroll-mt-24 rounded-2xl border border-white/10 bg-white/[.035] p-5 sm:p-6">
-        <h2 className="text-lg font-semibold">What you'll find</h2>
-        <p className="mt-2 leading-relaxed text-white/65">
-          Vetto is a natural-language DeFi assistant for Robinhood Chain. These docs explain
-          how to ask for an action, review what Vetto proposes, and understand what it can and
-          cannot do. Nothing moves without your explicit approval.
+    <DocsFrame toc={TOC} tocNote="Docs describe the build you are looking at. Capability labels come from the same registry the app uses.">
+      <section className="docs-hero">
+        <span className="docs-hero-tile">
+          <DocIcon.welcome />
+        </span>
+        <span className="docs-hero-label">Vetto docs</span>
+        <h1>
+          Everything Vetto does, <span className="grad">in plain words.</span>
+        </h1>
+        <p>
+          Tell Vetto what you want and it finds the way on Robinhood Chain, quotes the pools that answered,
+          checks what is risky, and leaves the signature to you.
         </p>
-      </section>
-
-      <section id="start-here" className="mt-8 scroll-mt-24">
-        <h2 className="text-2xl font-semibold tracking-tight">Start here</h2>
-        <p className="mt-2 text-sm leading-relaxed text-white/60">New to Vetto? Begin with the overview, then follow a request from prompt to review.</p>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          {DOCS.slice(0, 2).map((doc, index) => (
-            <Link key={doc.id} href={`/docs/${doc.id}`} className="group rounded-2xl border border-white/10 bg-white/[.03] p-5 transition-colors hover:border-lilac/35 hover:bg-white/[.06]">
-              <span className="text-xs text-lilac">0{index + 1} · {doc.group}</span>
-              <h3 className="mt-2 font-semibold group-hover:text-lilac">{doc.title}<span aria-hidden="true" className="ml-2">→</span></h3>
-              <p className="mt-2 text-sm leading-relaxed text-white/55">{doc.summary}</p>
-            </Link>
-          ))}
+        <div className="docs-hero-ctas">
+          <Link href="/app" className="docs-cta-light">
+            Open the app
+            <i>
+              <DocIcon.arrow />
+            </i>
+          </Link>
+          <Link href="/docs/quickstart" className="docs-cta-ghost">Quickstart</Link>
         </div>
       </section>
 
-      <section id="browse-by-topic" className="mt-10 scroll-mt-24">
-        <h2 className="text-2xl font-semibold tracking-tight">Browse by topic</h2>
-        <div className="mt-5 space-y-7">
-          {GROUPS.map((group) => (
-            <div key={group}>
-              <h3 className="mb-3 text-xs font-semibold uppercase tracking-[.14em] text-white/40">{group}</h3>
-              <ul className="grid gap-3 sm:grid-cols-2">
-                {DOCS.filter((doc) => doc.group === group).map((doc) => (
-                  <li key={doc.id}>
-                    <Link href={`/docs/${doc.id}`} className="group flex h-full flex-col rounded-xl border border-white/10 bg-white/[.025] p-4 transition-colors hover:border-lilac/30 hover:bg-white/[.05]">
-                      <span className="font-medium group-hover:text-lilac">{doc.title}<span aria-hidden="true" className="ml-2">→</span></span>
-                      <span className="mt-1.5 text-sm leading-relaxed text-white/50">{doc.summary}</span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </div>
-      </section>
+      <DocBody blocks={BLOCKS} />
+
+      <nav className="docs-pn" aria-label="Previous and next">
+        <span />
+        <Link href="/docs/quickstart" className="docs-pn-r">
+          <small>Next</small>
+          <b>Quickstart</b>
+        </Link>
+      </nav>
     </DocsFrame>
   );
 }
