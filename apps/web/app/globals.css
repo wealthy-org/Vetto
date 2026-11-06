@@ -146,6 +146,14 @@ body { background: var(--bg); color: #f1eeff; font-family: var(--font-sans), sys
 }
 .bubble-in { animation: bubble-in 0.42s cubic-bezier(0.16, 1, 0.3, 1) both; }
 
+/* Stage speech bubble: sits just right of the character's head. It is anchored inside the
+   character's own box, so it follows the head at every stage height. When the centre column
+   is too narrow for a bubble beside the head, it moves above it instead of being clipped. */
+.stage-bubble { left: 63%; top: 2%; }
+@media (max-width: 1180px) {
+  .stage-bubble { left: 50%; top: 0; max-width: 190px; translate: -50% 0; }
+}
+
 /* Speech-bubble tail: a rotated square tucked under the bubble edge. */
 .bubble-tail::after {
   content: "";

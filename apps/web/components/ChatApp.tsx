@@ -584,12 +584,13 @@ export function ChatApp() {
             <div className="stage-glow pointer-events-none absolute inset-0" />
             <div className="stage-vignette pointer-events-none absolute inset-0" />
 
-            <Banker
-              pose={busy ? "think" : "idle"}
-              className="stage-breathe absolute bottom-[-6%] left-1/2 h-[min(86%,620px)] w-auto -translate-x-1/2"
-            />
-
-            <StageBubble text={stageLine} busy={busy} />
+            {/* The bubble lives inside the character's own box so it stays pinned just
+                right of the head at every stage height, instead of drifting to the
+                corner of the panel. */}
+            <div className="stage-breathe absolute bottom-[-6%] left-1/2 h-[min(86%,620px)] w-max -translate-x-1/2">
+              <Banker pose={busy ? "think" : "idle"} className="h-full w-auto" />
+              <StageBubble text={stageLine} busy={busy} />
+            </div>
 
             {activeRoutes.length > 0 && (
               <div className="absolute inset-x-0 bottom-3 z-20 px-6">
@@ -788,7 +789,10 @@ export function ChatApp() {
 function StageBubble({ text, busy }: { text: string | undefined; busy: boolean }) {
   if (!busy && !text) return null;
   return (
-    <div key={busy ? "busy" : text} className="bubble-in absolute right-4 top-4 z-30 max-w-[240px]">
+    <div
+      key={busy ? "busy" : text}
+      className="bubble-in stage-bubble absolute z-30 w-max max-w-[210px]"
+    >
       <div className="bubble-tail relative rounded-[16px] border border-white/25 bg-[#f7f4ff] px-3 py-2 text-[11.5px] leading-snug text-[#241747] shadow-[0_16px_38px_rgba(6,3,24,.5)]">
         {busy ? (
           <span className="flex items-center gap-1">
