@@ -16,7 +16,7 @@ export type DocBlock =
   | { k: "h3"; text: string }
   | { k: "ul"; items: string[] }
   | { k: "hint"; tone: "info" | "tip" | "warn" | "danger"; text: string }
-  | { k: "cards"; items: DocCard[] }
+  | { k: "cards"; items: DocCard[]; muted?: boolean }
   | { k: "steps"; items: { title: string; body: string }[] }
   | { k: "table"; head: string[]; rows: string[][] }
   | { k: "prompt"; text: string }
@@ -29,7 +29,7 @@ export type DocCard = {
   body: string;
   href: string;
   icon: DocIconName;
-  badge?: "Planned" | "Unavailable" | "Soon";
+  badge?: string;
 };
 
 export type DocPage = {
@@ -250,7 +250,12 @@ export const DOC_PAGES: DocPage[] = [
     lead: "Every capability carries a label. Verified means integrated and tested here. Planned means not available yet. Unavailable means not supported on this chain right now.",
     icon: "status",
     blocks: [
-      { k: "p", text: "The list below is generated from the same registry the app uses, so it cannot drift from what the interface shows." },
+      { k: "p", text: "The list below is generated from the same registry the app uses, so it cannot drift from what the interface shows. Three entries — approvals, transaction preparation and execution receipts — are implemented and tested; they report **Verified** only on a deployment that has swap execution enabled *and* a database for the execution record. On every other deployment they stay Planned, and the swap review says why." },
+      {
+        k: "hint",
+        tone: "info",
+        text: "Deploying the app does not add a relay, a solver, a market maker, a burner machine or an isolated browser. Those need a counterparty or compute that no deployment setting can create, so they stay Planned or Unavailable everywhere.",
+      },
       { k: "h2", id: "capability-list", text: "Capability list" },
       { k: "capabilities" },
       { k: "h2", id: "what-the-labels-mean", text: "What the labels mean" },

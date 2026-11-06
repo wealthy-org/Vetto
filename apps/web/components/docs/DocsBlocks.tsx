@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CAPABILITIES } from "@vetto/quote-engine";
+import { capabilitiesForDeployment, deploymentFacts, executionLive } from "@/lib/deployment-capabilities";
 import type { DocBlock } from "@/lib/docs-content";
 import { DocIcon } from "./doc-icons";
 
@@ -77,7 +77,7 @@ function Block({ block }: { block: DocBlock }) {
 
     case "cards":
       return (
-        <div className="cards">
+        <div className={block.muted ? "cards muted" : "cards"}>
           {block.items.map((card) => {
             const Icon = DocIcon[card.icon];
             return (
@@ -159,33 +159,46 @@ function Block({ block }: { block: DocBlock }) {
         </div>
       );
 
-    case "capabilities":
+    case "capabilities": {
+      const facts = deploymentFacts();
+      const live = executionLive(facts);
       return (
-        <div className="table-wrap">
-          <table className="dt">
-            <thead>
-              <tr>
-                <th>Capability</th>
-                <th>Status</th>
-                <th>Note</th>
-              </tr>
-            </thead>
-            <tbody>
-              {CAPABILITIES.map((capability) => (
-                <tr key={capability.id}>
-                  <td>{capability.label}</td>
-                  <td>
-                    <span className={`status status-${capability.status}`}>
-                      {capability.status === "verified" ? "Verified" : capability.status === "planned" ? "Planned" : "Unavailable"}
-                    </span>
-                  </td>
-                  <td>{capability.note}</td>
+        <>
+          {live && (
+            <div className="hint tip">
+              <DocIcon.shield />
+              <div>
+                <p>This deployment has swap execution enabled and a database configured, so the approval, preparation and receipt steps report Verified here. The registry itself is unchanged.</p>
+              </div>
+            </div>
+          )}
+          <div className="table-wrap">
+            <table className="dt">
+              <thead>
+                <tr>
+                  <th>Capability</th>
+                  <th>Status</th>
+                  <th>Note</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {capabilitiesForDeployment(facts).map((capability) => (
+                  <tr key={capability.id}>
+                    <td>{capability.label}</td>
+                    <td>
+                      <span className={`status status-${capability.status}`}>
+                        {capability.status === "verified" ? "Verified" : capability.status === "planned" ? "Planned" : "Unavailable"}
+                      </span>
+                    </td>
+                    <td>{capability.note}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       );
+    }
 
     case "faq":
       return (

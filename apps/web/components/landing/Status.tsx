@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
-import { CAPABILITIES } from "@vetto/quote-engine";
+import { CAPABILITIES, type Capability } from "@vetto/quote-engine";
 import { ROBINHOOD_CHAIN_ID } from "@vetto/asset-registry";
 import { StatusChip } from "../StatusChip";
 
@@ -10,9 +10,27 @@ const DOT: Record<string, string> = { verified: "#7ee2a8", planned: "#b9a2ff", u
 
 export function Status() {
   const root = useRef<HTMLElement>(null);
-  const total = CAPABILITIES.length;
-  const verified = CAPABILITIES.filter((c) => c.status === "verified").length;
+  // The registry renders first (it is the same on every deployment); the API then
+  // reports what *this* deployment can run, e.g. execution-enabled builds.
+  const [caps, setCaps] = useState<Capability[]>(() => [...CAPABILITIES]);
+  const total = caps.length;
+  const verified = caps.filter((c) => c.status === "verified").length;
   const [animatedCount, setAnimatedCount] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    void fetch("/api/capabilities", { cache: "no-store" })
+      .then(async (response) => (response.ok ? ((await response.json()) as { capabilities?: Capability[] }) : null))
+      .then((body) => {
+        if (active && Array.isArray(body?.capabilities) && body.capabilities.length) setCaps(body.capabilities);
+      })
+      .catch(() => {
+        /* the static registry stays on screen; a failed fetch never upgrades a label */
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     const el = root.current;
@@ -61,7 +79,7 @@ export function Status() {
               <span className="pb-1 text-sm text-white/55">of {total} capabilities verified</span>
             </div>
             <div className="mt-4 flex flex-wrap gap-1.5" aria-hidden>
-              {CAPABILITIES.map((c) => <i key={c.id} data-dot className="h-3 w-3 rounded-full" style={{ background: DOT[c.status], opacity: 1 }} />)}
+              {caps.map((c) => <i key={c.id} data-dot className="h-3 w-3 rounded-full" style={{ background: DOT[c.status], opacity: 1 }} />)}
             </div>
             <div className="mt-3 flex gap-4 text-[11px] text-white/45">
               {[["verified", "Verified"], ["planned", "Planned"], ["unavailable", "Unavailable"]].map(([k, t]) => (<span key={k} className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full" style={{ background: DOT[k!] }} />{t}</span>))}
@@ -75,7 +93,7 @@ export function Status() {
           </dl>
         </div>
         <ul className="glass divide-y divide-white/5 overflow-hidden rounded-3xl">
-          {CAPABILITIES.map((c) => (
+          {caps.map((c) => (
             <li key={c.id} data-row className="flex items-start gap-4 px-5 py-4">
               <div data-chip className="w-24 shrink-0 pt-0.5"><StatusChip status={c.status} /></div>
               <div><div className="text-sm font-medium">{c.label}</div><div className="mt-0.5 text-xs leading-relaxed text-white/50">{c.note}</div></div>

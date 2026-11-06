@@ -75,3 +75,20 @@ curl -i https://<your-domain>/api/capabilities   # expect 200, 14 entries
 | `ORIGIN_MISMATCH` | The browser's `Origin` matched neither `APP_ORIGIN` nor the host the request arrived on. | Usually a custom domain / proxy that needs `APP_ORIGIN` updated. |
 | `RATE_LIMIT_SALT_MISSING` | Salt unset or placeholder. | Generate one. |
 | `SCHEMA_MISSING` | Database reachable but unmigrated. | `pnpm db:migrate`. |
+
+## What a deployment changes about capability labels
+
+`GET /api/capabilities` is deployment-aware. The registry in
+`packages/quote-engine/src/capabilities.ts` is identical in every environment,
+but the endpoint (and `/docs/status`, and the landing "What's live" section once
+the fetch resolves) promotes exactly three ids to **verified** when *this*
+deployment can carry a transaction:
+
+| Condition | Promoted |
+|---|---|
+| `VETTO_SWAP_EXECUTION=on` **and** `DATABASE_URL` set | `permit2-approval`, `transaction-prepare`, `execution-history` |
+| anything else | none — the registry's own labels are returned |
+
+Nothing else is ever promoted by configuration. A relay, solver, market maker,
+burner machine or isolated browser needs a counterparty or compute that hosting
+cannot provide, so those stay Planned / Unavailable on every deployment.
