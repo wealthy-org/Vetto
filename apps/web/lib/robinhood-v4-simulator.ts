@@ -87,6 +87,8 @@ export interface SimulationResult {
   allowance?: {
     /** Current Permit2 allowance for the sell token, in base units. */
     permit2Allowance?: string;
+    /** Unix seconds at which the Permit2 grant expires. */
+    permit2Expiration?: number;
     /** Current ERC-20 allowance granted to Permit2, in base units. */
     tokenToPermit2Allowance?: string;
     /** How much the swap needs, in base units. */
@@ -350,6 +352,7 @@ export async function simulateRobinhoodV4Swap(
     allowance = {
       tokenToPermit2Allowance: tokenAllowance.toString(),
       permit2Allowance: permitAllowance[0].toString(),
+      permit2Expiration: Number(permitAllowance[1]),
       required: amountIn.toString(),
       satisfied: tokenAllowance >= amountIn && permitAllowance[0] >= amountIn && permitAllowance[1] > nowSeconds,
     };

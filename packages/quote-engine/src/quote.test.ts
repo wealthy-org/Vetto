@@ -255,15 +255,33 @@ test("a failing adapter is reported, not fatal", async () => {
   ]);
 });
 
-test("capability registry is honest: no external capability is marked verified without an integration", () => {
-  const ext = CAPABILITIES.filter((c) =>
-    /^(route-|private-|wallet-|dapp-|agent-|live-)/.test(c.id),
-  );
+test("capability registry is honest: nothing is marked verified unless listed as integrated", () => {
+  // Every capability whose status is "verified" must be named here, together with what was
+  // actually exercised. Adding a new id to the registry with status "verified" therefore
+  // fails this test until someone writes down the integration behind it.
+  const INTEGRATED: Record<string, string> = {
+    "intent-preview": "deterministic parser, unit-tested",
+    "link-passive": "URL policy, unit-tested",
+    "route-direct": "live quoteExactInputSingle against three ETH/USDG pools, cross-checked on two RPCs",
+  };
 
-  assert.ok(
-    ext.length > 0 &&
-    ext.every((c) => c.status !== "verified"),
-  );
+  const verified = CAPABILITIES.filter((c) => c.status === "verified");
+
+  assert.ok(verified.length > 0, "the registry should keep at least one verified capability");
+
+  for (const capability of verified) {
+    assert.ok(
+      INTEGRATED[capability.id],
+      `${capability.id} is marked verified but has no recorded integration`,
+    );
+  }
+
+  // Anything that depends on a third party we have not integrated stays unverified.
+  const ext = CAPABILITIES.filter((c) => /^(route-|private-|wallet-|dapp-|agent-|live-)/.test(c.id));
+  assert.ok(ext.length > 0);
+  for (const capability of ext.filter((c) => c.status === "verified")) {
+    assert.ok(INTEGRATED[capability.id], `${capability.id} is external and must not be verified`);
+  }
 });
 
 test("a timed-out adapter does not block quote collection", async () => {

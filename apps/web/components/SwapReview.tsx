@@ -40,6 +40,21 @@ type Prepared = {
   };
 };
 
+type ApprovalStep = {
+  purpose: "erc20-approve-permit2" | "permit2-approve-router";
+  narration: string;
+  to: string;
+  data: string;
+  value: string;
+  call: { method: string; args: Record<string, string> };
+};
+
+type ApprovalPlan = {
+  satisfied: boolean;
+  snapshot: { required: string; tokenToPermit2: string; permit2ToRouter: string };
+  steps: ApprovalStep[];
+};
+
 type ExecutionView = {
   id: string;
   status: "prepared" | "submitted" | "confirmed" | "reverted" | "expired";
@@ -107,6 +122,8 @@ export function SwapReview({ intent, quote, label, selectedPath, onSelectPath, o
   const [prepared, setPrepared] = useState<Prepared | null>(null);
   const [execution, setExecution] = useState<ExecutionView | null>(null);
   const [confirmedReview, setConfirmedReview] = useState(false);
+  const [approvals, setApprovals] = useState<ApprovalStep[]>([]);
+  const [approvalHashes, setApprovalHashes] = useState<string[]>([]);
 
   const index = selected ? routes.findIndex((route) => route.quoteId === selected.quoteId) + 1 : 0;
   const bestOut = routes.reduce<bigint>((max, route) => {
@@ -130,8 +147,8 @@ export function SwapReview({ intent, quote, label, selectedPath, onSelectPath, o
       ? `${(selected.venueFeeBps / 100).toFixed(2).replace(/\.?0+$/, "")}%`
       : "Unavailable";
 
-  async function prepare() {
-    if (!selected || busy) return;
+  async function prepare(): Promise<"prepared" | "approval" | "failed"> {
+    if (!selected || busy) return "failed";
     setBusy("preparing");
     setError("");
     setPrepared(null);
@@ -154,16 +171,81 @@ export function SwapReview({ intent, quote, label, selectedPath, onSelectPath, o
         error?: string;
         code?: string;
         simulation?: { reason?: string };
+        approval?: ApprovalPlan;
       };
 
       if (!response.ok || body.status !== "prepared") {
+        if (body.code === "APPROVAL_REQUIRED" && body.approval?.steps?.length) {
+          // Not a dead end: the wallet signs these separately, then we prepare again.
+          setApprovals(body.approval.steps);
+          setApprovalHashes([]);
+          setError("");
+          return "approval";
+        }
         setError(body.error ?? body.simulation?.reason ?? "Simulation did not pass.");
-        return;
+        return "failed";
       }
 
+      setApprovals([]);
       setPrepared(body);
+      return "prepared";
     } catch (err) {
       setError(err instanceof Error ? err.message : "Preparation failed. Nothing was sent.");
+      return "failed";
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  /**
+   * Walks the wallet through the Permit2 approvals one at a time, then prepares the swap
+   * again. Nothing is approximated: the calldata below was built server-side and is shown
+   * to the user before each signature.
+   */
+  async function runApprovals() {
+    if (!approvals.length || busy) return;
+    setBusy("signing");
+    setError("");
+    const hashes: string[] = [];
+
+    try {
+      const { provider, address } = await getConnectedWallet();
+
+      for (const step of approvals) {
+        const hash = await provider.request<string>({
+          method: "eth_sendTransaction",
+          params: [
+            {
+              from: address,
+              to: step.to,
+              data: step.data,
+              value: `0x${BigInt(step.value || "0").toString(16)}`,
+            },
+          ],
+        });
+
+        if (!hash || !/^0x[0-9a-fA-F]{64}$/.test(hash)) {
+          throw new Error("The wallet did not return a transaction hash for the approval.");
+        }
+        hashes.push(hash);
+        setApprovalHashes([...hashes]);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "The approval was not sent.");
+      setBusy(null);
+      return;
+    } finally {
+      setBusy(null);
+    }
+
+    // Approvals are on the way; ask the server to re-simulate until the chain agrees.
+    setBusy("preparing");
+    try {
+      for (let attempt = 0; attempt < 12; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+        const outcome = await prepare();
+        if (outcome !== "approval") break;
+      }
     } finally {
       setBusy(null);
     }
@@ -371,7 +453,54 @@ export function SwapReview({ intent, quote, label, selectedPath, onSelectPath, o
           )}
 
           <div className="mt-4">
-            {!prepared && (
+            {approvals.length > 0 && !prepared && (
+              <div className="mb-3 rounded-2xl border border-amber-300/25 bg-amber-200/[.06] p-3">
+                <p className="text-[11.5px] font-semibold text-amber-100/90">
+                  Step {approvalHashes.length + 1} of {approvals.length}: token approval
+                </p>
+                <p className="mt-1 text-[11px] leading-relaxed text-white/60">
+                  {approvals[approvalHashes.length]?.narration}
+                </p>
+                <dl className="mt-2 space-y-0.5 text-[10px] text-white/45">
+                  <div className="flex justify-between gap-3">
+                    <dt>Contract</dt>
+                    <dd className="font-mono text-white/60">{approvals[approvalHashes.length]?.to}</dd>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <dt>Call</dt>
+                    <dd className="text-right font-mono text-white/60">
+                      {approvals[approvalHashes.length]?.call.method}
+                    </dd>
+                  </div>
+                </dl>
+                {approvalHashes.length > 0 && (
+                  <p className="mt-2 text-[10px] text-white/35">
+                    Sent: {approvalHashes.map((hash) => `${hash.slice(0, 10)}…`).join(", ")} — waiting
+                    for the chain to confirm.
+                  </p>
+                )}
+                <button
+                  type="button"
+                  onClick={() => void runApprovals()}
+                  disabled={busy !== null}
+                  className="btn btn-primary mt-2.5 w-full disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {busy === "signing"
+                    ? "Confirm in your wallet…"
+                    : busy === "preparing"
+                      ? "Waiting for the approval to land…"
+                      : approvalHashes.length > 0
+                        ? "Approve next step"
+                        : "Approve with wallet"}
+                </button>
+                <p className="mt-2 text-[10px] leading-relaxed text-white/35">
+                  This is a separate transaction from the swap. It moves no tokens — it only sets
+                  the allowance shown above, and the swap is prepared again once the chain confirms it.
+                </p>
+              </div>
+            )}
+
+            {!prepared && !approvals.length && executable && (
               <button
                 type="button"
                 onClick={() => void prepare()}
@@ -379,6 +508,17 @@ export function SwapReview({ intent, quote, label, selectedPath, onSelectPath, o
                 className="btn btn-primary w-full shadow-[0_14px_34px_rgba(201,182,255,.22)] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {busy === "preparing" ? "Simulating…" : "Simulate & review"}
+              </button>
+            )}
+
+            {!prepared && !approvals.length && !executable && (
+              <button
+                type="button"
+                disabled
+                aria-describedby="execution-disabled-note"
+                className="btn w-full cursor-not-allowed border border-white/[.10] bg-white/[.04] text-white/45"
+              >
+                Simulate &amp; review — unavailable
               </button>
             )}
 
@@ -405,9 +545,11 @@ export function SwapReview({ intent, quote, label, selectedPath, onSelectPath, o
             )}
 
             {!executable && (
-              <p className="mt-2 text-[10.5px] leading-relaxed text-white/35">
-                Quoted live, but signing is switched off in this deployment (
-                <span className="font-mono">VETTO_SWAP_EXECUTION</span> not enabled).
+              <p id="execution-disabled-note" className="mt-2 text-[10.5px] leading-relaxed text-white/40">
+                Quotes are live, but this deployment does not submit transactions:
+                simulation and signing stay off until the operator enables{" "}
+                <span className="font-mono">VETTO_SWAP_EXECUTION</span> after a small-value
+                receipt test. Nothing was sent, and no approval was requested.
               </p>
             )}
           </div>

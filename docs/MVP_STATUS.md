@@ -2,7 +2,7 @@
 
 **Diperbarui:** 5 November 2026
 **Diuji pada:** build production lokal + Postgres 17 + RPC Robinhood Chain (chain 4663)
-**Ringkas:** inti "intent → quote live → simulasi → review" sudah jalan dan terverifikasi. Yang belum: **penandatanganan transaksi belum menyala** (menunggu satu transaksi nyata bernilai kecil), approval Permit2 terpisah, dan seluruh fitur Phase 3.
+**Ringkas:** inti "intent → quote live → simulasi → review" sudah jalan dan terverifikasi. Yang belum: **penandatanganan transaksi belum menyala** (menunggu satu transaksi nyata bernilai kecil) dan seluruh fitur Phase 3. Approval Permit2 sebagai langkah terpisah sekarang sudah ada (kode + unit test), tinggal diuji dengan wallet berdana.
 
 Legenda:
 
@@ -73,7 +73,7 @@ Legenda:
 
 | Fitur | Yang kurang |
 |---|---|
-| Simulasi → persiapan transaksi (`POST /api/execute/prepare`) | kode fail-closed & lengkap; belum pernah dijalankan dengan wallet berdana |
+| Simulasi → persiapan transaksi (`POST /api/execute/prepare`) | kode fail-closed & lengkap; belum pernah dijalankan dengan wallet berdana. Bila allowance kurang, respons jadi `422 APPROVAL_REQUIRED` berisi rencana approval, bukan jalan buntu. |
 | Registrasi hash transaksi + receipt (`confirmed`/`reverted` hanya dari chain) | butuh 1 transaksi nyata |
 | Riwayat eksekusi (`/api/executions`, `/api/executions/[id]`) | butuh DB + eksekusi nyata |
 | Saldo ETH/USDG read-only di dua RPC (`/api/balances`) | butuh pengecekan di deployment |
@@ -87,7 +87,7 @@ Legenda:
 | Fitur | Alasan |
 |---|---|
 | **Transaksi swap nyata** | gate terakhir: butuh wallet uji berdana kecil + 1 tx sukses |
-| Approval `Permit2` sebagai langkah terpisah | sekarang swap USDG→ETH ditolak bila allowance kurang (jujur, belum bisa lanjut) |
+| ~~Approval `Permit2` sebagai langkah terpisah~~ → **sudah ada** 🟡 | `lib/permit2-approval.ts` + `POST /api/execute/approve` + panel approval di kartu review: dua tx terpisah (ERC-20 approve ke Permit2, lalu Permit2 approve untuk router) dengan jumlah persis dan masa berlaku 30 hari; swap disiapkan ulang hanya setelah chain melaporkan allowance cukup. Terverifikasi unit test (7 tes calldata), belum dijalankan dengan dana nyata. |
 | Delta aset dari trace/state-diff | `eth_call` sukses lebih lemah dari fork + diff; perlu `debug_traceCall`/fork provider |
 | Split route multi-pool | butuh router yang terbukti, bukan karangan |
 | Intent solver / RFQ | tidak ada counterparty di chain ini |
@@ -154,6 +154,7 @@ Sejak 5 Nov 2026 setiap 503 membawa `code` + `hint`. Artinya bukan wallet-nya ya
 | `DATABASE_REJECTED` | user/password ditolak | periksa `DATABASE_URL` + `?sslmode=` |
 | `DATABASE_UNREACHABLE` | tidak ada yang listen | jalankan Postgres / perbaiki host:port |
 | `APP_ORIGIN_MISSING` | `next start` di production tanpa `APP_ORIGIN` (loopback dikecualikan) | isi `APP_ORIGIN=https://domain-kamu` |
+| `ORIGIN_MISMATCH` | header `Origin` browser beda host dengan deployment (proxy/custom domain/preview) | set `APP_ORIGIN` ke origin https publik; di preview lokal pakai `VETTO_PREVIEW_EMBED=1` |
 
 ---
 

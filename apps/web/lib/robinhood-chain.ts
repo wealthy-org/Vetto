@@ -139,6 +139,13 @@ export const ERC20_ABI = [
     inputs: [{ name: "owner", type: "address" }, { name: "spender", type: "address" }],
     outputs: [{ type: "uint256" }],
   },
+  {
+    type: "function",
+    name: "approve",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "spender", type: "address" }, { name: "amount", type: "uint256" }],
+    outputs: [{ type: "bool" }],
+  },
 ] as const;
 
 export const V4_QUOTER_POOL_MANAGER_ABI = [
@@ -201,6 +208,18 @@ export const PERMIT2_ABI = [
       { name: "expiration", type: "uint48" },
       { name: "nonce", type: "uint48" },
     ],
+  },
+  {
+    type: "function",
+    name: "approve",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "token", type: "address" },
+      { name: "spender", type: "address" },
+      { name: "amount", type: "uint160" },
+      { name: "expiration", type: "uint48" },
+    ],
+    outputs: [],
   },
 ] as const;
 

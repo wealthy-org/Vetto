@@ -1,5 +1,14 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { expectedOrigin, jsonError, jsonOk, guardJson, isRecord } from "@/lib/http";
+import {
+  configuredAppOrigin,
+  expectedOrigin,
+  isLoopbackOrigin,
+  jsonError,
+  jsonOk,
+  guardJson,
+  isRecord,
+  requestOriginOf,
+} from "@/lib/http";
 import { getPool } from "@/lib/db";
 import { failureFields } from "@/lib/setup-hints";
 import {
@@ -9,16 +18,6 @@ import {
   isWalletAuthChainId,
   WALLET_AUTH_CHAIN_ID,
 } from "@/lib/wallet-auth";
-
-/** localhost/127.0.0.1/[::1] — a developer's own machine, never a public host. */
-function isLoopbackOrigin(origin: string): boolean {
-  try {
-    const { hostname } = new URL(origin);
-    return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1" || hostname === "[::1]";
-  } catch {
-    return false;
-  }
-}
 
 export async function POST(request: Request) {
   const guarded = await guardJson(request, "auth-challenge", 10);
@@ -49,7 +48,25 @@ export async function POST(request: Request) {
       hint: `Set APP_ORIGIN to this deployment's https origin (for example ${requestOrigin}) in apps/web/.env.local, then restart.`,
     });
   }
-  const configuredOrigin = process.env.APP_ORIGIN ?? requestOrigin;
+  // A localhost APP_ORIGIN copied from a dev .env into a hosting dashboard signs a message
+  // that claims the user is on localhost — worse than failing, because it looks like it
+  // worked. Name the mistake instead of signing it.
+  const configured = configuredAppOrigin();
+  if (process.env.NODE_ENV === "production" && configured && isLoopbackOrigin(configured)) {
+    const servedOn = requestOriginOf(request);
+    if (!isLoopbackOrigin(servedOn)) {
+      return jsonError(503, "APP_ORIGIN is still pointing at localhost.", {
+        code: "APP_ORIGIN_LOOPBACK",
+        hint:
+          `This deployment is served on ${servedOn}, but APP_ORIGIN=${configured}. ` +
+          `Set APP_ORIGIN=${servedOn} (or your custom domain) in the hosting dashboard and redeploy.`,
+      });
+    }
+  }
+
+  // `expectedOrigin` already prefers APP_ORIGIN; it only substitutes the request host in
+  // preview mode when APP_ORIGIN is a loopback value that cannot apply to this host.
+  const configuredOrigin = requestOrigin;
   let origin: URL;
   try {
     origin = new URL(configuredOrigin);
@@ -57,7 +74,10 @@ export async function POST(request: Request) {
     if (origin.origin !== configuredOrigin || (httpsRequired && origin.protocol !== "https:")) {
       return jsonError(503, "Wallet sign-in origin is misconfigured.", {
         code: "APP_ORIGIN_INVALID",
-        hint: "APP_ORIGIN must be a bare origin such as https://vetto.app — no path, no trailing slash.",
+        hint: httpsRequired && origin.protocol !== "https:"
+          ? `A wallet signature needs an https origin, but this request resolved to ${origin.origin}. ` +
+            "Set APP_ORIGIN to the deployment's public https origin (for example https://vetto.app) and restart."
+          : "APP_ORIGIN must be a bare origin such as https://vetto.app — no path, no trailing slash.",
       });
     }
   } catch {

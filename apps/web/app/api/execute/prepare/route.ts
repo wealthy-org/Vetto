@@ -19,6 +19,7 @@ import {
   swapExecutionEnabled,
 } from "@/lib/robinhood-chain";
 import { fingerprintPayload, fingerprintQuote, sameDigest } from "@/lib/quote-fingerprint";
+import { planApprovals } from "@/lib/permit2-approval";
 
 export const runtime = "nodejs";
 
@@ -233,6 +234,37 @@ export async function POST(request: Request) {
     }
 
     if (simulation.status !== "passed" || !simulation.transaction) {
+      // A missing Permit2 allowance is not a dead end: it is a separate, user-signed step.
+      // Return the plan so the browser can walk the wallet through it and retry.
+      const allowance = simulation.allowance;
+      if (
+        allowance &&
+        (!allowance.satisfied ||
+          (allowance.tokenToPermit2Allowance !== undefined &&
+            BigInt(allowance.tokenToPermit2Allowance) < BigInt(allowance.required ?? "0")))
+      ) {
+        const snapshot = {
+          token: tokenIn.address as `0x${string}`,
+          owner: wallet.address as `0x${string}`,
+          tokenToPermit2: BigInt(allowance.tokenToPermit2Allowance ?? "0"),
+          permit2ToRouter: BigInt(allowance.permit2Allowance ?? "0"),
+          permit2Expiration: allowance.permit2Expiration ?? 0,
+          required: BigInt(allowance.required ?? amountInBaseUnits),
+          nowSeconds: Math.floor(Date.now() / 1000),
+        };
+        return await fail(
+          422,
+          {
+            error:
+              "This token needs a Permit2 approval before the swap can be built. " +
+              "Nothing was sent.",
+            code: "APPROVAL_REQUIRED",
+            approval: planApprovals(snapshot),
+          },
+          "approval-required",
+        );
+      }
+
       return await fail(
         422,
         {

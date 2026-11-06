@@ -93,7 +93,7 @@ selalu `false`.
 | `DATABASE_URL` | migrasi `0001`–`0004`, sesi, riwayat, eksekusi, rate limit Postgres |
 | `RATE_LIMIT_SALT` (≥32 karakter) | rate limit production |
 | `TRUST_PROXY_HOPS` | hitungan proxy di depan app |
-| `APP_ORIGIN` | pengecekan origin absolut (opsional di local/preview) |
+| `APP_ORIGIN` | origin publik deployment, mis. `https://vetto.app` (boleh daftar dipisah koma: apex + www). Wajib di production non-loopback; jadi acuan domain SIWE |
 | `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` | sign-in WalletConnect |
 | `VETTO_SWAP_EXECUTION=on` | **membuka penandatanganan transaksi** (default mati di production) |
 | `ROBINHOOD_RPC_URL_PRIMARY` / `_SECONDARY` | opsional; default memakai endpoint publik + provider independen |
