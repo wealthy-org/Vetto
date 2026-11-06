@@ -10,6 +10,7 @@ export function Mark({ size = 22, className }: { size?: number; className?: stri
       <Image
         src="/logo.png"
         alt=""
+        priority
         width={Math.ceil(size * 1.35)}
         height={Math.ceil(size * 1.35)}
         sizes={`${Math.ceil(size * 1.35)}px`}

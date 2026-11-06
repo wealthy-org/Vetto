@@ -46,14 +46,9 @@ export function Landing() {
       const glow = q("[data-glow]");
       if (!char || !banker) return;
 
-      // --- page-load intro: the lens zooms in (canvas) while the headline rises line by line.
-      if (!reduced) {
-        const intro = gsap.timeline({ defaults: { ease: "expo.out" } });
-        intro
-          .from("[data-hero-pill]", { opacity: 0, y: 10, duration: 0.8 }, 0.35)
-          .from("[data-line]", { yPercent: 110, duration: 1.2, stagger: 0.12 }, 0.5)
-          .from("[data-hero-fade]", { opacity: 0, y: 14, duration: 0.9, stagger: 0.1 }, 0.95);
-      }
+      // The page-load intro lives in CSS (see globals.css: .hero-in / .hero-line-in) so it
+      // starts on the first paint instead of waiting for this bundle to hydrate, which used
+      // to make the hero appear and then jump into its animation.
 
       // --- the scroll story (scrubbed, so it plays backwards too)
       const screens = desktop ? SCROLL_SCREENS : 1.2;
@@ -128,27 +123,33 @@ export function Landing() {
             <div className="absolute inset-0 z-10 flex items-center justify-center px-5 text-center">
               <div data-hero-content className="mx-auto max-w-4xl pt-16">
                 <div data-hero-copy>
-                  <span data-hero-pill className="chip mb-7 !bg-ink/60 backdrop-blur"><i className="h-2 w-2 rounded-full bg-mint" /> On Robinhood Chain</span>
+                  <span data-hero-pill className="hero-in chip mb-7 !bg-ink/60 backdrop-blur" style={{ "--d": "0.30s" } as React.CSSProperties}><i className="h-2 w-2 rounded-full bg-mint" /> On Robinhood Chain</span>
                   <h1 className="h-display text-[clamp(2.8rem,6.6vw,5.5rem)]">
-                    <span className="block overflow-hidden pb-[0.08em]"><span data-line className="block">Your DeFi banker.</span></span>
-                    <span className="block overflow-hidden pb-[0.08em]"><span data-line className="grad block">Every move checked.</span></span>
+                    <span className="block overflow-hidden pb-[0.08em]"><span data-line className="hero-line-in block" style={{ "--d": "0.45s" } as React.CSSProperties}>Your DeFi banker.</span></span>
+                    <span className="block overflow-hidden pb-[0.08em]"><span data-line className="hero-line-in grad block" style={{ "--d": "0.57s" } as React.CSSProperties}>Every move checked.</span></span>
                   </h1>
-                  <p data-hero-fade className="mx-auto mt-6 max-w-xl text-pretty text-[15px] leading-relaxed text-white/65 [text-shadow:0_0_24px_#06041a]">
+                  <p data-hero-fade className="hero-in mx-auto mt-6 max-w-xl text-pretty text-[15px] leading-relaxed text-white/65 [text-shadow:0_0_24px_#06041a]" style={{ "--d": "0.70s" } as React.CSSProperties}>
                     Ask in plain language. Vetto reads your intent, quotes live Uniswap v4 pools on Robinhood Chain, checks public links, and simulates the exact transaction. Signing stays with your wallet — and is switched off in this deployment.
                   </p>
-                  <div data-hero-fade className="mt-8 flex items-center justify-center gap-3">
+                  <div data-hero-fade className="hero-in mt-8 flex items-center justify-center gap-3" style={{ "--d": "0.85s" } as React.CSSProperties}>
                     <Link href="/sign-in" className="btn btn-primary">Launch app <IconArrow className="h-4 w-4" /></Link>
                     <a href="#meet" className="btn btn-ghost bg-ink/60 backdrop-blur">See what he does</a>
                   </div>
                 </div>
               </div>
             </div>
-            <div data-hero-scroll className="pointer-events-none absolute inset-x-0 bottom-5 z-10 flex flex-col items-center gap-2 text-[11px] text-white/40" aria-hidden>
-              <span className="fade-up flex flex-col items-center gap-2">Scroll<span className="scroll-line" /></span>
+            <div data-hero-scroll className="hero-in pointer-events-none absolute inset-x-0 bottom-5 z-10 flex flex-col items-center gap-2 text-[11px] text-white/40" aria-hidden style={{ "--d": "1.05s" } as React.CSSProperties}>
+              <span className="flex flex-col items-center gap-2">Scroll<span className="scroll-line" /></span>
             </div>
 
             {/* MEET copy (left column on desktop, top on mobile) */}
-            <div data-meet-copy className="pointer-events-none absolute inset-0 z-10 mx-auto flex max-w-6xl items-start px-5 pt-24 lg:items-center lg:pt-10">
+            {/* Starts hidden in markup: GSAP sets autoAlpha 1 when the scroll story reaches
+                it. Without this the layer is visible on first paint (before hydration) and
+                sits on top of the hero copy. */}
+            <div
+              data-meet-copy
+              className="pointer-events-none invisible absolute inset-0 z-10 mx-auto flex max-w-6xl items-start px-5 pt-24 opacity-0 lg:items-center lg:pt-10"
+            >
               <div className="pointer-events-auto w-full lg:w-1/2">
                 <p data-meet-item className="mb-4 text-sm text-lilac">Meet Vetto</p>
                 <h2 data-meet-item className="h-display text-[2rem] sm:text-5xl md:text-6xl">Say it plainly.<br /><span className="grad">He reads the fine print.</span></h2>
