@@ -239,17 +239,20 @@ export function Banker({ pose = "idle", className = "", fade = true, viewBox = "
             covered by the jacket front — the limb then reads as coming out of the body
             instead of lying on top of it. Only visible in the wave pose. */}
         <g className="pose-wave-arm">
-          {/* One continuous limb: shoulder -> elbow -> wrist drawn as a single stroked
-              polyline so the elbow has no seam. It is emitted before the shirt/vest/
-              lapels, so the jacket front covers the shoulder end. */}
-          <path d="M394 408 L502 450 L546 300" fill="none" stroke="#1f1659" strokeWidth={70} strokeLinecap="round" strokeLinejoin="round" />
-          <path d="M394 408 L502 450 L546 300" fill="none" stroke={`url(#${id("sleeve")})`} strokeWidth={66} strokeLinecap="round" strokeLinejoin="round" />
-          <g transform="translate(546 298) rotate(19)">
-            <rect x={-36} y={-11} width={72} height={22} rx={8} fill="#fff" stroke="#cfc8ee" strokeWidth={1.8} />
-          </g>
-          <g transform="translate(541 294) rotate(19) scale(0.85) translate(-543 -402)">
-            <path d="M502 398 498 332Q496 316 510 316L516 348 518 298Q520 282 534 284L538 342 544 292Q548 276 561 280L560 342 570 310Q578 298 588 306Q590 332 578 374L568 402Z" fill="#f4f1ff" stroke="#cfc8ee" strokeWidth={2.6} strokeLinejoin="round" />
-          </g>
+          {/* One raised arm, built from the same jointed geometry as the think pose: the
+              cuff and the glove are rotated from the actual forearm angle, so the hand
+              continues the arm instead of sitting at a crooked angle. Widths match the
+              hanging sleeves so the arm never looks thinner than the idle pose. It is
+              emitted before the shirt/vest/lapels, so the jacket covers the shoulder end
+              and the limb reads as coming out of the body. */}
+          <JointedArm
+            shoulder={[394, 408]}
+            elbow={[502, 450]}
+            wrist={[546, 300]}
+            sleeve={`url(#${id("sleeve")})`}
+            width={66}
+            gloveScale={0.85}
+          />
         </g>
 
         {/* neck */}
@@ -300,9 +303,9 @@ export function Banker({ pose = "idle", className = "", fade = true, viewBox = "
             elbow={[452, 476]}
             wrist={[414, 350]}
             sleeve={`url(#${id("sleeve")})`}
-            width={46}
-            gloveScale={0.5}
-            gloveTilt={-6}
+            width={62}
+            gloveScale={0.82}
+            gloveTilt={-4}
           />
         </g>
 
