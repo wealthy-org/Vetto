@@ -77,6 +77,7 @@ curl -i https://<your-domain>/api/capabilities   # expect 200, 14 entries
 | `ORIGIN_MISMATCH` | The browser's `Origin` matched neither `APP_ORIGIN` nor the host the request arrived on. | Usually a custom domain / proxy that needs `APP_ORIGIN` updated. |
 | `RATE_LIMIT_SALT_MISSING` | Salt unset or placeholder. | Generate one. |
 | `SCHEMA_MISSING` | Database reachable but unmigrated. | `pnpm db:migrate`. |
+| `DATABASE_PASSWORD_MISSING` | `DATABASE_URL` has no password but the server answers with SCRAM (`SASL: ... client password must be a string`). | Put a password in the URL (`postgresql://user:password@host:5432/db`, URL-encode `@` `#` `:`) or set `PGPASSWORD`. A cluster started with `initdb --auth=trust` needs none. |
 
 ## What a deployment changes about capability labels
 

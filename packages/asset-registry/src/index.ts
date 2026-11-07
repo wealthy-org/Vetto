@@ -10,8 +10,17 @@
  * project claims as verified; `VETTO_CHAIN_PROFILE=testnet` switches the whole
  * app to Robinhood Chain Testnet (46630) so the flow can be exercised with
  * faucet funds. Keep this in sync with apps/web/lib/chain-profile.ts.
+ *
+ * The NEXT_PUBLIC_* value is read first because this module is also bundled for
+ * the browser, where only NEXT_PUBLIC_* survives — the same registry then decides
+ * both what the server accepts and what the chat offers as examples.
  */
-const PROFILE = (process.env.VETTO_CHAIN_PROFILE ?? "").trim().toLowerCase() === "testnet" ? "testnet" : "mainnet";
+const PROFILE =
+  ((process.env.NEXT_PUBLIC_VETTO_CHAIN_PROFILE ?? process.env.VETTO_CHAIN_PROFILE) ?? "")
+    .trim()
+    .toLowerCase() === "testnet"
+    ? "testnet"
+    : "mainnet";
 
 export const ROBINHOOD_CHAIN_ID = (PROFILE === "testnet" ? 46630 : 4663) as 4663 | 46630; // re-verify before launch
 export const IS_TESTNET_PROFILE = PROFILE === "testnet";

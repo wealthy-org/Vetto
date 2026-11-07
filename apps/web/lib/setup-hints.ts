@@ -60,6 +60,19 @@ export function setupHint(error: unknown): SetupHint | undefined {
     };
   }
 
+  // SASL/SCRAM: Postgres asked for a password and the pool had none to send.
+  // node-postgres reports this as "SASL: SCRAM-SERVER-FIRST-MESSAGE: client password
+  // must be a string", with no SQLSTATE, so it has to be matched on the message.
+  if (message.includes("client password must be a string") || message.includes("SCRAM-SERVER-FIRST")) {
+    return {
+      code: "DATABASE_PASSWORD_MISSING",
+      hint:
+        "Postgres asked for a password but DATABASE_URL has none. Use " +
+        "postgresql://user:password@host:5432/db (URL-encode @, # and : in the password), " +
+        "or set PGPASSWORD. A local cluster started with `initdb --auth=trust` needs no password.",
+    };
+  }
+
   // Authentication / connectivity failures.
   if (code === "28P01" || code === "28000" || code === "42501") {
     return {

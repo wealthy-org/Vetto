@@ -21,6 +21,13 @@ test("setupHint: wrong database, bad credentials and no listener are distinct", 
   assert.equal(setupHint(Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:5432")))?.code, "DATABASE_UNREACHABLE");
 });
 
+test("setupHint: a password-less DATABASE_URL is named, not left as a blank 503", () => {
+  const error = new Error("SASL: SCRAM-SERVER-FIRST-MESSAGE: client password must be a string");
+  assert.equal(setupHint(error)?.code, "DATABASE_PASSWORD_MISSING");
+  assert.match(setupHint(error)?.hint ?? "", /PGPASSWORD/);
+  assert.ok(!(setupHint(error)?.hint ?? "").includes("SCRAM")); // no driver internals in the hint
+});
+
 test("setupHint: unknown failures stay unexplained instead of guessing", () => {
   assert.equal(setupHint(new Error("something else entirely")), undefined);
   assert.deepEqual(failureFields(new Error("something else entirely")), {});

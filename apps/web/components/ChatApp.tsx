@@ -3,7 +3,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { english } from "viem/accounts";
-import { findAsset } from "@vetto/asset-registry";
+import { findAsset, listAssets } from "@vetto/asset-registry";
 import {
   parseIntent,
   type Intent,
@@ -50,9 +50,16 @@ type TxItem = {
   createdAt: string;
 };
 
+/**
+ * Examples are built from the asset registry, never hardcoded: on a testnet
+ * deployment the registry holds test tokens, and a chip that names USDG would
+ * dead-end in "I don't have that symbol".
+ */
+const QUOTE_SYMBOL = listAssets().find((asset) => asset.symbol !== "ETH")?.symbol ?? "ETH";
+
 const SUGGESTIONS = [
-  "Swap 100 USDG to ETH",
-  "Swap 0.01 ETH to USDG",
+  `Swap 100 ${QUOTE_SYMBOL} to ETH`,
+  `Swap 0.01 ETH to ${QUOTE_SYMBOL}`,
   "Is fastclaim-hood.xyz safe?",
   "Mint the NFT at nft-mint-pass.app max 0.01 ETH",
 ];
@@ -365,7 +372,7 @@ export function ChatApp({ chain }: { chain?: ChainDisplay } = {}) {
             ? i.question
             : i.kind === "chat"
               ? result.warning ??
-                "I can quote swaps and check links before you connect. Try “swap 0.1 ETH to USDG” or paste a link. Nothing runs until you approve it."
+                `I can quote swaps and check links before you connect. Try “swap 0.1 ETH to ${QUOTE_SYMBOL}” or paste a link. Nothing runs until you approve it.`
               : "Here’s how I read that.",
         result,
         ...(CAP_FOR[i.kind] ? { capId: CAP_FOR[i.kind]! } : {}),
@@ -700,7 +707,7 @@ export function ChatApp({ chain }: { chain?: ChainDisplay } = {}) {
                   rows={1}
                   value={input}
                   maxLength={500}
-                  placeholder="Ask VETTO: swap 100 USDG to ETH…"
+                  placeholder={`Ask VETTO: swap 100 ${QUOTE_SYMBOL} to ETH…`}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {

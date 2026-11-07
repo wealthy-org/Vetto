@@ -87,11 +87,24 @@ interface SwapInput {
   privateRequested: boolean; slippagePct?: string | undefined;
 }
 
+/**
+ * A symbol the registry does not know is never guessed at — but "which token did
+ * you mean?" is a dead end if the person cannot see what this chain does have.
+ * The list is whatever the active deployment's registry holds.
+ */
+function unknownAsset(symbol: string): string {
+  const known = listAssets().map((asset) => asset.symbol);
+  return (
+    `I don't have ${symbol.toUpperCase()} in the asset registry, so I won't guess a contract. ` +
+    `This deployment knows: ${known.join(", ")}. Which token did you mean?`
+  );
+}
+
 /** Shared by the deterministic parser and the (untrusted) LLM path. */
 function buildSwap(i: SwapInput): ParseResult {
   const tIn = findAsset(i.tokenIn);
   if (!tIn) {
-    return clarify(`I don't have ${i.tokenIn.toUpperCase()} in the asset registry, so I won't guess a contract. Which token did you mean?`);
+    return clarify(unknownAsset(i.tokenIn));
   }
   let amount: string;
   let units: bigint;
@@ -122,7 +135,7 @@ function buildSwap(i: SwapInput): ParseResult {
     );
   }
   const tOut = findAsset(i.tokenOut);
-  if (!tOut) return clarify(`I don't have ${i.tokenOut.toUpperCase()} in the asset registry, so I won't guess a contract. Which token did you mean?`);
+  if (!tOut) return clarify(unknownAsset(i.tokenOut));
   if (tOut.symbol === tIn.symbol) return clarify(`${tIn.symbol} to ${tIn.symbol} is not a swap. Pick a different destination token.`);
 
   const intent: Intent = { kind: "swap", chainId: ROBINHOOD_CHAIN_ID, tokenIn: tIn.symbol, tokenOut: tOut.symbol, amountIn: amount, privateRequested: i.privateRequested };

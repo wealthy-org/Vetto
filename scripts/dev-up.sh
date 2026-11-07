@@ -77,7 +77,7 @@ ROBINHOOD_RPC_URL_SECONDARY=https://robinhood.drpc.org
 # No DATABASE_URL on this box: rate limits become process-local and say so in the log.
 VETTO_ALLOW_MEMORY_LIMITS=1
 # Wallet sign-in needs DATABASE_URL + RATE_LIMIT_SALT + migrations. To enable it locally:
-#   echo "DATABASE_URL=postgresql://user@127.0.0.1:5432/vetto" >> apps/web/.env.local
+#   echo "DATABASE_URL=postgresql://user:password@127.0.0.1:5432/vetto" >> apps/web/.env.local
 #   echo "RATE_LIMIT_SALT=$(openssl rand -hex 32)"            >> apps/web/.env.local
 #   pnpm db:migrate
 # Allow the hosted preview to frame the app. Off for any public deployment.

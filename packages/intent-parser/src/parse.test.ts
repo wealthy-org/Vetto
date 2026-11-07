@@ -387,3 +387,14 @@ test("remembered URLs do not allow LLM to authorize an unverified swap", async (
   assert.equal(called, true);
   assert.equal(parsed.intent.kind, "clarification");
 });
+
+test("an unknown symbol names what this deployment does have, instead of a dead end", () => {
+  const parsed = parseIntent("swap 1 ETH to NOTACOIN");
+  assert.equal(parsed.intent.kind, "clarification");
+  const question = parsed.intent.kind === "clarification" ? parsed.intent.question : "";
+  // Still refuses to guess a contract…
+  assert.match(question, /won't guess a contract/);
+  // …but the person is told which symbols the registry holds, so the next message can succeed.
+  assert.match(question, /This deployment knows: .*ETH/);
+  assert.match(question, /This deployment knows: .*USDG/);
+});

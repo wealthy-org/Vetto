@@ -1,10 +1,19 @@
 import type { CapabilityStatus } from "@vetto/quote-engine";
+import { listAssets } from "@vetto/asset-registry";
 import { serverProfile } from "./chain-profile";
 import { CAPABILITIES } from "@vetto/quote-engine";
 import type { DocIconName } from "@/components/docs/doc-icons";
 
 /** The chain this deployment documents, so the docs cannot contradict the app. */
 const DOC_CHAIN = serverProfile();
+
+/**
+ * Example prompts have to be prompts this deployment can actually parse. The
+ * quote asset comes from the same registry the parser uses, so a testnet
+ * deployment's docs never suggest USDG — which it has no pool and no contract for.
+ */
+const DOC_ASSETS = listAssets();
+const DOC_QUOTE = DOC_ASSETS.find((asset) => asset.symbol !== "ETH")?.symbol ?? "ETH";
 
 /**
  * Docs copy lives here as typed blocks so the pages stay layout-only and the
@@ -73,8 +82,8 @@ export const DOC_PAGES: DocPage[] = [
       ] },
       { k: "h2", id: "try-a-request", text: "Try a request" },
       { k: "p", text: "These are real prompts the parser accepts. Press *Try* and the sentence lands in the composer — it does not send itself." },
-      { k: "prompt", text: "Swap 100 USDG to ETH" },
-      { k: "prompt", text: "Swap 0.01 ETH to USDG" },
+      { k: "prompt", text: `Swap 100 ${DOC_QUOTE} to ETH` },
+      { k: "prompt", text: `Swap 0.01 ETH to ${DOC_QUOTE}` },
       { k: "prompt", text: "Is fastclaim-hood.xyz safe?" },
       { k: "h2", id: "what-happens-next", text: "What happens next" },
       { k: "ul", items: [
@@ -96,12 +105,12 @@ export const DOC_PAGES: DocPage[] = [
       { k: "p", text: "Vetto parses your sentence locally first and only asks a language model when the pattern is unclear. Whatever the path, the result is a validated object — never free-form code and never a wallet action." },
       { k: "h2", id: "what-it-understands", text: "What it understands" },
       { k: "table", head: ["You type", "Vetto reads it as"], rows: [
-        ["Swap 100 USDG to ETH", "Swap, public submission, default 0.5% slippage"],
-        ["swap 500 USDG to ETH privately", "Swap, private requested — which is reported as unavailable, not promised"],
+        [`Swap 100 ${DOC_QUOTE} to ETH`, "Swap, public submission, default 0.5% slippage"],
+        [`swap 500 ${DOC_QUOTE} to ETH privately`, "Swap, private requested — which is reported as unavailable, not promised"],
         ["Is fastclaim-hood.xyz safe?", "Link check (passive URL and DNS only)"],
         ["Mint the NFT at nft-mint-pass.app max 0.01 ETH", "Capped burner task — labelled Planned, nothing runs"],
-        ["Swap 2 USDG", "Clarification: which token do you want back?"],
-        ["swap 1,5 ETH to USDG", "Clarification: ambiguous decimal separator"],
+        [`Swap 2 ${DOC_QUOTE}`, "Clarification: which token do you want back?"],
+        [`swap 1,5 ETH to ${DOC_QUOTE}`, "Clarification: ambiguous decimal separator"],
       ]},
       { k: "h2", id: "what-it-refuses", text: "What it refuses" },
       { k: "ul", items: [
@@ -139,7 +148,7 @@ export const DOC_PAGES: DocPage[] = [
         "**Network fee** — gas units times the chain's gas price at quote time.",
         "**Quote valid until** — after this the fingerprint no longer matches and the review is refused.",
       ] },
-      { k: "prompt", text: "Swap 100 USDG to ETH" },
+      { k: "prompt", text: `Swap 100 ${DOC_QUOTE} to ETH` },
       { k: "h2", id: "before-you-sign", text: "Before you sign" },
       { k: "p", text: "The server rebuilds the transaction, re-reads a fresh quote from a second RPC endpoint, checks your balance and Permit2 allowance, and simulates the exact payload from your wallet address. If the minimum you reviewed is no longer reachable, the swap stops instead of degrading quietly." },
       { k: "hint", tone: "warn", text: "Simulation success is weaker evidence than a fork-based state diff. Vetto says so rather than upgrading the claim." },
@@ -304,7 +313,7 @@ export const DOC_PAGES: DocPage[] = [
         { q: "Why a separate burner wallet for tasks?", a: "So a malicious page or a bug can cost at most the small amount you funded — and never your main wallet." },
         { q: "Which chain is this?", a: `${DOC_CHAIN.name}, chain ID ${DOC_CHAIN.chainId}, gas in ETH. Token addresses come from a fixed registry, not from the page you pasted.` },
         { q: "Why is signing sometimes unavailable?", a: "Execution is opt-in per deployment. Until an operator runs a funded receipt test, the server refuses to prepare a signable payload and says why." },
-        { q: "Why does it say free-form parsing is off?", a: "The optional AI parser is configured with an operator key. When that provider rejects the key (or is rate-limited), Vetto skips it and keeps going with the built-in parser: swaps like “swap 0.1 ETH to USDG” and link checks still work, and the message says nothing was executed. The deployment health is reported as `llmParser` on `/api/capabilities`." },
+        { q: "Why does it say free-form parsing is off?", a: `The optional AI parser is configured with an operator key. When that provider rejects the key (or is rate-limited), Vetto skips it and keeps going with the built-in parser: swaps like “swap 0.1 ETH to ${DOC_QUOTE}” and link checks still work, and the message says nothing was executed. The deployment health is reported as \`llmParser\` on \`/api/capabilities\`.` },
         { q: "Does Vetto store my messages?", a: "Only when you are signed in, scoped to your address, and only the parsed request — never a seed phrase, which is rejected before parsing." },
       ] },
     ],
