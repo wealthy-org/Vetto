@@ -9,7 +9,7 @@ import {
   IntentValidationError,
   parseDecimal,
 } from "@vetto/intent-parser";
-import { findAsset, isExecutableAsset } from "@vetto/asset-registry";
+import { executableSymbols, findAsset, isExecutableAsset } from "@vetto/asset-registry";
 import { simulateRobinhoodV4Swap, type SimulationResult } from "@/lib/robinhood-v4-simulator";
 import {
   CONTRACTS,
@@ -197,11 +197,25 @@ export async function POST(request: Request) {
 
     const tokenIn = findAsset(intent.tokenIn);
     const tokenOut = findAsset(intent.tokenOut);
+    const requestedIn = intent.tokenIn.toUpperCase();
+    const requestedOut = intent.tokenOut.toUpperCase();
 
     if (!isExecutableAsset(tokenIn) || !isExecutableAsset(tokenOut)) {
       await client.query("rollback");
       transactionOpen = false;
-      return jsonError(422, "Unknown swap asset.");
+
+      // "Unknown swap asset." on its own is a dead end: name the asset that was
+      // refused and the ones this deployment can execute, and never echo an address.
+      const names = [requestedIn, requestedOut]
+        .filter((symbol, index, all) => all.indexOf(symbol) === index)
+        .filter((symbol) => !isExecutableAsset(findAsset(symbol)))
+        .join(" and ");
+
+      return jsonError(
+        422,
+        `${names} cannot be executed on this deployment. Executable here: ${executableSymbols().join(", ")}. Nothing was sent.`,
+        { code: "ASSET_NOT_EXECUTABLE" },
+      );
     }
 
     const amountInBaseUnits = parseDecimal(intent.amountIn, tokenIn.decimals).toString();

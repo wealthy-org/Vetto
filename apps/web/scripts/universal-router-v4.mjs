@@ -110,8 +110,16 @@ export function buildUniversalRouterV4Swap({
     throw new Error("minOut must fit uint128 and be positive.");
   }
 
-  const currencyIn = zeroForOne ? ZERO : USDG;
-  const currencyOut = zeroForOne ? USDG : ZERO;
+  // The settled/taken currency is whichever token the pool pairs with native ETH.
+  // It comes from the pool key so a deployment on another chain (or another token)
+  // encodes the right addresses; the mainnet constant stays the default.
+  const currency1 = key.currency1 ?? USDG;
+  if (key.currency0 !== ZERO) {
+    throw new Error("native-ETH swaps require currency0 to be the zero address.");
+  }
+
+  const currencyIn = zeroForOne ? ZERO : currency1;
+  const currencyOut = zeroForOne ? currency1 : ZERO;
 
   const swapParams = encodeAbiParameters(
     [exactInputSingleType],

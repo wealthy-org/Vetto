@@ -38,6 +38,8 @@ type Prepared = {
       satisfied: boolean;
     } | null;
     quoteBlockNumber?: string;
+    /** False when only one RPC provider exists for this chain. */
+    crossChecked?: boolean;
   };
 };
 
@@ -403,6 +405,11 @@ export function SwapReview({
             {chainView.testnet && <Row k="Funds" v="Testnet only — no real value" />}
             <Row k="Via" v={`Uniswap v4 · ${routes.length > 0 ? "1 pool" : "—"}`} />
             <Row k="Visibility" v="Public mempool" />
+            {/* Two providers agreeing is the mainnet claim. A chain with one operator
+                must not borrow it, so the row says what actually happened. */}
+            {prepared?.simulation.crossChecked === false && (
+              <Row k="RPC cross-check" v="Single provider (this chain has one)" dim />
+            )}
             <Row
               k="Quote valid until"
               v={new Date(selected.executableUntil).toLocaleTimeString()}

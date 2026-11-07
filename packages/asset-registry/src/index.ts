@@ -34,6 +34,16 @@ export interface Asset {
   /** `native` for the gas token, a checksummed address once verified, null while unknown. */
   readonly address: `0x${string}` | "native" | null;
   readonly status: AssetStatus;
+  /**
+   * Cleared to reach the quote / simulate / prepare path on this chain.
+   *
+   * Deliberately separate from `status`: a test token's *identity* is not
+   * verified against official sources (so it stays "unverified" in the UI), but
+   * its address came from the pool's own Initialize event and answered a real
+   * quote, which is what execution actually needs. Mainnet assets are executable
+   * only when verified; nothing becomes executable by accident.
+   */
+  readonly executable?: boolean;
 }
 
 /**
@@ -49,6 +59,8 @@ const TESTNET_ASSETS: readonly Asset[] = Object.freeze([
     decimals: 18,
     address: "0x348be142c0f4ac4b90b91c02aaeef9f3d246c737" as `0x${string}`,
     status: "unverified",
+    // Address read from the pool's Initialize event; the pool answers quotes.
+    executable: true,
   },
   {
     // Symbol matches the token's own symbol() on chain 46630.
@@ -57,6 +69,7 @@ const TESTNET_ASSETS: readonly Asset[] = Object.freeze([
     decimals: 18,
     address: "0xc77118728cda4cd2f5fe4b0d1fa866acb2d83365" as `0x${string}`,
     status: "unverified",
+    executable: true,
   },
 ]);
 
@@ -88,7 +101,16 @@ export function findAsset(symbol: string): Asset | undefined {
   return ASSETS.find((a) => a.symbol === s);
 }
 
-/** Only verified assets with a known address may reach the quote/execution path. */
+/**
+ * Only assets with a known address that this deployment has cleared may reach the
+ * quote/execution path: verified ones, plus any asset explicitly marked
+ * `executable` (today: the test tokens on chain 46630).
+ */
 export function isExecutableAsset(a: Asset | undefined): a is Asset {
-  return !!a && a.status === "verified" && a.address !== null;
+  return !!a && a.address !== null && (a.status === "verified" || a.executable === true);
+}
+
+/** Symbols this deployment can actually execute, for messages that should not dead-end. */
+export function executableSymbols(): string[] {
+  return ASSETS.filter(isExecutableAsset).map((asset) => asset.symbol);
 }

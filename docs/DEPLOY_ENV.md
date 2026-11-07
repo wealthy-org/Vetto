@@ -133,6 +133,18 @@ No independent RPC operator is known for 46630, so the cross-check that mainnet
 performs across two providers degrades to one provider here; quotes are labelled
 accordingly and are still read straight from the pool, never interpolated.
 
+Two consequences worth knowing before you flip the switch:
+
+- **No independent RPC operator exists for 46630**, so the simulator's dual-provider
+  cross-check degrades to a single provider. It never pretends otherwise:
+  `simulation.crossChecked` is `false` and the route review shows
+  "RPC cross-check — single provider (this chain has one)". Mainnet still runs the
+  full block-hash + bytecode + quote comparison across two providers.
+- **Test tokens are `unverified` but executable.** Status describes identity
+  verification and stays `unverified` in the UI; `executable: true` in the registry
+  is a separate, explicit clearance needed to reach quote/simulate/prepare. On
+  mainnet only `verified` assets are executable, so nothing changed there.
+
 Safety rules that do not change on testnet: execution still needs
 `VETTO_SWAP_EXECUTION` **and** `DATABASE_URL`, signing still happens in the
 wallet, and no capability is promoted that the registry does not already list.

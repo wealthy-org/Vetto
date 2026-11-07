@@ -15,11 +15,11 @@ import {
   PERMIT2_ABI,
   POOL_VENUES,
   ROBINHOOD_CHAIN_ID,
-  USDG,
   V4_QUOTER_QUOTE_ABI,
   findVenue,
   rpcUrls,
 } from "./robinhood-chain";
+import { serverProfile } from "./chain-profile";
 
 /**
  * Pre-signature simulation.
@@ -29,7 +29,7 @@ import {
  * offered for signature we:
  *   1. verify both RPCs are on Robinhood Chain,
  *   2. agree on a common block and compare its hash,
- *   3. compare runtime bytecode of router / quoter / Permit2 / USDG,
+ *   3. compare runtime bytecode of router / quoter / Permit2 / the traded token,
  *   4. fetch the same quote from both providers and require an exact match,
  *   5. re-check the reviewed minimum output against the fresh quote,
  *   6. check balances, Permit2 allowance and gas headroom,
@@ -51,7 +51,7 @@ export interface SimulationInput {
   tokenOut: string;
   amountInBaseUnits: string;
   slippageBps: number;
-  /** Registered venue id; defaults to the 0.05% ETH/USDG pool. */
+  /** Registered venue id; defaults to the first pool that pairs the token with ETH. */
   venueId?: string;
   /** Minimum output the user already reviewed; the fresh quote must still clear it. */
   reviewedMinOutBaseUnits?: string;
@@ -72,6 +72,8 @@ export interface SimulationResult {
   tokenOut: string;
   amountInBaseUnits: string;
   venueId?: string;
+  /** False when only one RPC provider answered (no independent cross-check exists). */
+  crossChecked: boolean;
   expectedOutBaseUnits?: string;
   minOutBaseUnits?: string;
   gasPriceWei?: string;
@@ -162,16 +164,39 @@ export async function simulateRobinhoodV4Swap(
 
   const tokenIn = input.tokenIn.toUpperCase();
   const tokenOut = input.tokenOut.toUpperCase();
-  const zeroForOne = tokenIn === "ETH" && tokenOut === "USDG";
 
-  if (!zeroForOne && !(tokenIn === "USDG" && tokenOut === "ETH")) {
-    throw new Error("Only ETH/USDG swaps are supported.");
+  // The token paired with native ETH is whatever this deployment registers pools
+  // for (USDG on mainnet, the test tokens on 46630). Resolved from the registry,
+  // never from the request.
+  const profile = serverProfile();
+  const other = tokenIn === "ETH" ? tokenOut : tokenIn;
+  const otherAsset = profile.assets.find(
+    (asset) => asset.symbol === other && asset.address !== "native",
+  );
+
+  const zeroForOne = tokenIn === "ETH" && other === tokenOut && otherAsset !== undefined;
+
+  if (!otherAsset || (zeroForOne ? tokenOut !== other : tokenIn !== other && tokenOut !== "ETH")) {
+    throw new Error(`Only ETH/${profile.quoteAsset.symbol} swaps are supported on this deployment.`);
   }
 
-  const venue = input.venueId ? findVenue(input.venueId) : POOL_VENUES[0];
+  const venue = input.venueId
+    ? findVenue(input.venueId)
+    : POOL_VENUES.find(
+        (candidate) =>
+          candidate.poolKey.currency1.toLowerCase() === otherAsset.address.toString().toLowerCase(),
+      );
+
   if (!venue) {
     throw new Error("Unknown trading venue.");
   }
+
+  if (venue.poolKey.currency1.toLowerCase() !== otherAsset.address.toString().toLowerCase()) {
+    throw new Error("That venue does not pair this token with ETH.");
+  }
+
+  // The ERC-20 leg of this swap (native ETH has no token contract).
+  const erc20: Address = otherAsset.address as Address;
 
   let reviewedMinOut: bigint | null = null;
   if (input.reviewedMinOutBaseUnits !== undefined) {
@@ -185,14 +210,17 @@ export async function simulateRobinhoodV4Swap(
   const primaryRpc = urls.primary;
   const secondaryRpc = urls.secondary;
 
-  if (!primaryRpc || !secondaryRpc) {
-    throw new Error("Primary RPC, secondary RPC, or verified USDG configuration is missing.");
+  if (!primaryRpc) {
+    throw new Error("Primary RPC configuration is missing.");
   }
 
   const primaryUrl = validateRpcUrl(primaryRpc, "Primary");
-  const secondaryUrl = validateRpcUrl(secondaryRpc, "Secondary");
+  // Not every chain has a second, independently operated endpoint. Mainnet does and
+  // keeps its cross-check; a chain without one (today: testnet 46630) runs
+  // single-provider and says so, instead of pretending it verified anything.
+  const secondaryUrl = secondaryRpc ? validateRpcUrl(secondaryRpc, "Secondary") : null;
 
-  if (primaryUrl.origin === secondaryUrl.origin) {
+  if (secondaryUrl && primaryUrl.origin === secondaryUrl.origin) {
     throw new Error("Primary and secondary RPC must use different origins.");
   }
 
@@ -204,28 +232,24 @@ export async function simulateRobinhoodV4Swap(
     ?? ((url: string) => createPublicClient({ transport: http(url, { timeout: 15_000, retryCount: 0 }) }));
 
   const primary = createClient(primaryRpc);
-  const secondary = createClient(secondaryRpc);
+  const secondary = secondaryUrl ? createClient(secondaryRpc as string) : null;
+  /** True when two independent providers agreed on the block, bytecode and quote. */
+  const crossChecked = secondary !== null;
 
-  const [primaryChainId, secondaryChainId] = await Promise.all([
-    primary.getChainId(),
-    secondary.getChainId(),
-  ]);
+  const primaryChainId = await primary.getChainId();
+  const secondaryChainId = secondary ? await secondary.getChainId() : primaryChainId;
 
   if (primaryChainId !== CHAIN_ID || secondaryChainId !== CHAIN_ID) {
     throw new Error("One or both RPC providers are not on Robinhood Chain.");
   }
 
-  const [primaryHead, secondaryHead] = await Promise.all([
-    primary.getBlockNumber(),
-    secondary.getBlockNumber(),
-  ]);
+  const primaryHead = await primary.getBlockNumber();
+  const secondaryHead = secondary ? await secondary.getBlockNumber() : primaryHead;
 
   const commonBlock = primaryHead < secondaryHead ? primaryHead : secondaryHead;
 
-  const [primaryBlock, secondaryBlock] = await Promise.all([
-    primary.getBlock({ blockNumber: commonBlock }),
-    secondary.getBlock({ blockNumber: commonBlock }),
-  ]);
+  const primaryBlock = await primary.getBlock({ blockNumber: commonBlock });
+  const secondaryBlock = secondary ? await secondary.getBlock({ blockNumber: commonBlock }) : primaryBlock;
 
   if (
     !primaryBlock.hash
@@ -239,13 +263,17 @@ export async function simulateRobinhoodV4Swap(
     { name: "Router", address: ROUTER },
     { name: "Quoter", address: QUOTER },
     { name: "Permit2", address: PERMIT2 },
-    { name: "USDG", address: USDG.address },
+    { name: otherAsset.symbol, address: erc20 },
   ] as const;
 
-  const [primaryCodes, secondaryCodes] = await Promise.all([
-    Promise.all(watched.map((c) => primary.getBytecode({ address: c.address, blockNumber: commonBlock }))),
-    Promise.all(watched.map((c) => secondary.getBytecode({ address: c.address, blockNumber: commonBlock }))),
-  ]);
+  const primaryCodes = await Promise.all(
+    watched.map((c) => primary.getBytecode({ address: c.address, blockNumber: commonBlock })),
+  );
+  const secondaryCodes = secondary
+    ? await Promise.all(
+        watched.map((c) => secondary.getBytecode({ address: c.address, blockNumber: commonBlock })),
+      )
+    : primaryCodes;
 
   for (let index = 0; index < watched.length; index += 1) {
     const primaryCode = primaryCodes[index];
@@ -266,10 +294,10 @@ export async function simulateRobinhoodV4Swap(
     args: [{ poolKey: venue.poolKey, zeroForOne, exactAmount: amountIn, hookData: "0x" }],
   });
 
-  const [primaryQuoteCall, secondaryQuoteCall] = await Promise.all([
-    primary.call({ to: QUOTER, data: quoteData, blockNumber: commonBlock }),
-    secondary.call({ to: QUOTER, data: quoteData, blockNumber: commonBlock }),
-  ]);
+  const primaryQuoteCall = await primary.call({ to: QUOTER, data: quoteData, blockNumber: commonBlock });
+  const secondaryQuoteCall = secondary
+    ? await secondary.call({ to: QUOTER, data: quoteData, blockNumber: commonBlock })
+    : primaryQuoteCall;
 
   const primaryQuote = decodeQuote(primaryQuoteCall.data);
   const secondaryQuote = decodeQuote(secondaryQuoteCall.data);
@@ -290,7 +318,7 @@ export async function simulateRobinhoodV4Swap(
     zeroForOne
       ? Promise.resolve(0n)
       : primary.readContract({
-          address: USDG.address,
+          address: erc20,
           abi: ERC20_ABI,
           functionName: "balanceOf",
           args: [wallet],
@@ -306,6 +334,7 @@ export async function simulateRobinhoodV4Swap(
     tokenIn,
     tokenOut,
     venueId: venue.id,
+    crossChecked,
     amountInBaseUnits: amountIn.toString(),
     expectedOutBaseUnits: expectedOut.toString(),
     minOutBaseUnits: minOut.toString(),
@@ -334,7 +363,7 @@ export async function simulateRobinhoodV4Swap(
   if (!zeroForOne) {
     const [tokenAllowance, permitAllowance] = await Promise.all([
       primary.readContract({
-        address: USDG.address,
+        address: erc20,
         abi: ERC20_ABI,
         functionName: "allowance",
         args: [wallet, PERMIT2],
@@ -344,7 +373,7 @@ export async function simulateRobinhoodV4Swap(
         address: PERMIT2,
         abi: PERMIT2_ABI,
         functionName: "allowance",
-        args: [wallet, USDG.address, ROUTER],
+        args: [wallet, erc20, ROUTER],
         blockNumber: commonBlock,
       }),
     ]);
@@ -362,7 +391,7 @@ export async function simulateRobinhoodV4Swap(
         ...baseResult,
         status: "failed",
         allowance,
-        reason: "USDG allowance to Permit2 is insufficient.",
+        reason: `${otherAsset.symbol} allowance to Permit2 is insufficient.`,
       };
     }
 
