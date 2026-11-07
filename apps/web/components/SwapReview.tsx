@@ -6,6 +6,7 @@ import type { QuoteResult, RouteQuote } from "@vetto/quote-engine";
 import { formatAmount } from "@/lib/format";
 import { isTestnetDeployment, networkLabel, TESTNET_DISCLOSURE } from "@/lib/chain-label";
 import { resolveSendProvider } from "@/lib/execute-provider";
+import { WALLET_NOT_LINKED_ON_THIS_CHAIN } from "@/lib/linked-wallet";
 
 /**
  * Route review panel.
@@ -145,6 +146,8 @@ export function SwapReview({
   const [busy, setBusy] = useState<"preparing" | "signing" | "recording" | null>(null);
   const [error, setError] = useState("");
   const [prepared, setPrepared] = useState<Prepared | null>(null);
+  /** True when prepare said the wallet is linked on another chain and needs a new sign-in. */
+  const [relink, setRelink] = useState(false);
   const [execution, setExecution] = useState<ExecutionView | null>(null);
   const [confirmedReview, setConfirmedReview] = useState(false);
   const [approvals, setApprovals] = useState<ApprovalStep[]>([]);
@@ -173,6 +176,7 @@ export function SwapReview({
       : "Unavailable";
 
   async function prepare(): Promise<"prepared" | "approval" | "failed"> {
+    setRelink(false);
     if (!selected || busy) return "failed";
     setBusy("preparing");
     setError("");
@@ -200,6 +204,13 @@ export function SwapReview({
       };
 
       if (!response.ok || body.status !== "prepared") {
+        if (body.code === WALLET_NOT_LINKED_ON_THIS_CHAIN) {
+          // Not a dead end: the session was created on the other chain. Offer the fix.
+          setRelink(true);
+          setError(body.error ?? "Sign in again on this chain, then retry.");
+          return "failed";
+        }
+
         if (body.code === "APPROVAL_REQUIRED" && body.approval?.steps?.length) {
           // Not a dead end: the wallet signs these separately, then we prepare again.
           setApprovals(body.approval.steps);
@@ -479,7 +490,25 @@ export function SwapReview({
             </div>
           )}
 
-          {error && (
+          {relink && (
+            <button
+              type="button"
+              onClick={async () => {
+                // Drop the old session, then sign in again: the challenge binds the
+                // chain, so only a fresh signature can link this wallet to this chain.
+                await fetch("/api/auth/logout", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                });
+                window.location.assign("/sign-in");
+              }}
+              className="mt-2 w-full rounded-xl border border-lilac/40 bg-lilac/10 px-3 py-2.5 text-xs font-medium text-white hover:bg-lilac/20"
+            >
+              Sign out and sign in again on this chain
+            </button>
+          )}
+
+      {error && (
             <p role="status" aria-live="polite" className="mt-3 break-words text-[11.5px] leading-relaxed text-coral">
               {error}
             </p>

@@ -182,6 +182,61 @@ WalletConnect row. Phantom is **not** missing from the app — it is missing fro
   picker's Phantom row (extension) and its mobile deeplink
   (`https://phantom.app/ul/browse/<origin>`) are.
 
+## Testnet → mainnet cutover
+
+Testnet and mainnet are two separate chains with separate state. A transaction that
+lands on 46630 does not appear on 4663: it is visible on
+`https://explorer.testnet.chain.robinhood.com/tx/<hash>` and on the testnet RPC, and
+nowhere else. A testnet swap proves the *flow* (parse → quote → simulate → sign →
+receipt), never the mainnet funds path.
+
+There is no Solana / `.sol` component in this stack. Robinhood Chain is EVM: every
+address is `0x…`, tokens are ERC-20s or the native coin, and Phantom is used in its
+Ethereum mode. A `.sol` name or a Solana-only wallet cannot sign anything here.
+
+Cutover checklist:
+
+1. **Env.** Clear `VETTO_CHAIN_PROFILE` and `NEXT_PUBLIC_VETTO_CHAIN_PROFILE` (or set
+   both to `mainnet`), then rebuild and redeploy. `GET /api/capabilities` must report
+   `chainId: 4663`, `chain.testnet: false`, `chain.profileMismatch: false`.
+2. **Funds.** The wallet needs real ETH *on 4663* — gas plus the amount being swapped.
+   Testnet ETH from the faucet is worthless here and lives on another chain.
+3. **Execution flags.** `DATABASE_URL` plus `VETTO_SWAP_EXECUTION=on`; production
+   defaults to off until a receipt-level test has been done. That test is this run, so
+   start with the smallest amount that is still worth sending.
+4. **Quotes first, unsigned.** `POST /api/quotes` for ETH→USDG should return three
+   pools (0.05% / 0.30% / 1.00%). USDG is 6 decimals; gas is a fraction of a cent.
+5. **Sizing a test with 0.001 ETH.** Measured on 4663 at 0.0201 gwei, a v4 swap
+   costs ~42.6k gas ≈ 0.00000086 ETH, so gas is never the constraint — the input
+   amount and the 20% gas buffer are. Swap at most ~0.0009 ETH of a 0.001 ETH
+   balance and keep the rest:
+
+   | Send | Receive (0.05% pool) | Minimum at 0.5% | Gas |
+   | --- | --- | --- | --- |
+   | 0.0005 ETH | 1.116078 USDG | 1.110497 USDG | 0.00000086 ETH |
+   | 0.0009 ETH | 2.008941 USDG | 1.998896 USDG | 0.00000086 ETH |
+
+   A full round trip (ETH→USDG, then USDG→ETH with its two Permit2 approvals) is
+   four transactions ≈ 0.0000036 ETH of gas.
+6. **Receipt.** After signing, the hash is on `https://robinhoodchain.blockscout.com`.
+   Its *website* works in a browser; its API answers programmatic requests with a
+   Cloudflare challenge ("Just a moment…"), so do not script against it.
+7. **RPC.** The public mainnet endpoint is enough; Alchemy is only useful for a
+   dedicated rate limit. If you set `ROBINHOOD_RPC_URL_PRIMARY` to it, keep
+   `ROBINHOOD_RPC_URL_SECONDARY` on a *different* origin (the simulator refuses two
+   endpoints on the same origin). With no second provider the simulation runs
+   single-provider and the review says so.
+
+8. **Sign in again after the switch.** Wallet links are per chain
+   (`wallet_identities.chain_id`), and the sign-in challenge binds the chain that was
+   current. A session created on the testnet deployment therefore has no row for 4663
+   and prepare answers `409 WALLET_NOT_LINKED_ON_THIS_CHAIN` with a button to sign out
+   and sign in again. That is deliberate: a testnet signature must not authorise a
+   mainnet payload.
+
+Keep a testnet deployment and a mainnet deployment separate. One deployment cannot
+serve both: the chain is baked into the labels and into what the API simulates.
+
 ## LLM parser: which key goes in which variable
 
 There is no shared key and none can be handed out — a key is issued to your own

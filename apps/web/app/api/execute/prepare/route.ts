@@ -3,6 +3,8 @@ import type { PoolClient } from "pg";
 import { authenticatedUserId } from "@/lib/authenticated-user";
 import { writeAudit } from "@/lib/audit";
 import { getPool } from "@/lib/db";
+import { networkLabel } from "@/lib/chain-label";
+import { WALLET_NOT_LINKED_ON_THIS_CHAIN, pickLinkedWallet, walletLinkMessage } from "@/lib/linked-wallet";
 import { guardJson, isRecord, jsonError } from "@/lib/http";
 import {
   validateIntent,
@@ -179,21 +181,29 @@ export async function POST(request: Request) {
       );
     }
 
+    // Any chain: a session created on the other deployment's chain has no row for
+    // this one, and that is what we have to explain rather than 404 on.
     const walletResult = await client.query<WalletRow>(
       `select address, chain_id
        from wallet_identities
-       where user_id = $1 and chain_id = '${ROBINHOOD_CHAIN_ID}'
-       order by last_seen_at desc
-       limit 1`,
+       where user_id = $1
+       order by last_seen_at desc`,
       [userId],
     );
 
-    const wallet = walletResult.rows[0];
-    if (!wallet || Number(wallet.chain_id) !== ROBINHOOD_CHAIN_ID) {
+    const link = pickLinkedWallet(walletResult.rows, ROBINHOOD_CHAIN_ID);
+
+    if (!link.wallet) {
       await client.query("rollback");
       transactionOpen = false;
-      return jsonError(404, "No linked Robinhood Chain wallet found.");
+      return jsonError(
+        409,
+        walletLinkMessage(link, networkLabel(), ROBINHOOD_CHAIN_ID),
+        { code: WALLET_NOT_LINKED_ON_THIS_CHAIN, linkedChains: link.otherChainIds },
+      );
     }
+
+    const wallet = { address: link.wallet.address, chain_id: String(link.wallet.chainId) };
 
     const tokenIn = findAsset(intent.tokenIn);
     const tokenOut = findAsset(intent.tokenOut);
