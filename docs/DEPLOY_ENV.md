@@ -149,6 +149,39 @@ Safety rules that do not change on testnet: execution still needs
 `VETTO_SWAP_EXECUTION` **and** `DATABASE_URL`, signing still happens in the
 wallet, and no capability is promoted that the registry does not already list.
 
+## Wallets: signing, chain switching and the execute path
+
+- Sign-in and execute resolve the wallet from the address the swap was reviewed for:
+  an injected wallet already authorised for it is used first (`lib/execute-provider.ts`),
+  WalletConnect only when no browser wallet holds that address. Execute used to always
+  open WalletConnect, which looked like "the wrong wallet" when MetaMask had signed in.
+- The chain is always read with `eth_chainId`, never from a provider's cached
+  `chainId` property (undefined right after a WalletConnect session restore). A wallet
+  on the wrong chain is switched, or has the chain added (4902), before signing.
+- Refusals say what to do and end with "Nothing was sent."
+
+## Wallets: why the WalletConnect list looks short
+
+VETTO's own picker (`/sign-in`) offers Phantom, MetaMask, Rabby, Coinbase Wallet
+(as injected EIP-1193 providers, plus a Phantom deeplink on mobile) and a separate
+WalletConnect row. Phantom is **not** missing from the app — it is missing from the
+*WalletConnect modal's* "All Wallets" list, which is a different thing:
+
+- That list is fetched from WalletConnect's explorer, filtered by the chains the
+  provider asks for (`optionalChains`). A chain nobody lists (4663, 46630) filters
+  out nearly every wallet, Phantom included. Upstream reports the same effect for
+  other niche chains (reown-com/appkit#2961).
+- Declaring `eip155:1` next to the deployment's chain widens that list, but the
+  session then settles on mainnet and the provider's own `setChainId()` throws while
+  restoring it — the browser reported exactly that as `Cannot read properties of
+  undefined (reading 'request')` in `switchEthereumChain`. The chain list therefore
+  stays at the deployment's chain alone; an off-chain wallet is switched/added
+  explicitly by `ensureRobinhoodChain`. Making Phantom a *featured* wallet in that
+  modal needs Reown AppKit (`featuredWalletIds`), which this app does not use.
+- WalletConnect can never be the reliable route to Phantom on a custom chain. The
+  picker's Phantom row (extension) and its mobile deeplink
+  (`https://phantom.app/ul/browse/<origin>`) are.
+
 ## LLM parser: which key goes in which variable
 
 There is no shared key and none can be handed out — a key is issued to your own

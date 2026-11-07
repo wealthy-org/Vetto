@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import {
   WALLET_OPTIONS,
   detectedWallets,
+  isMobileBrowser,
+  phantomBrowseUrl,
   type WalletId,
 } from "@/lib/injected-wallet";
 import {
@@ -24,10 +26,12 @@ export function WalletPicker() {
   const [progress, setProgress] = useState("");
   const [error, setError] = useState("");
   const [detected, setDetected] = useState<Record<WalletId, boolean> | null>(null);
+  const [phantomLink, setPhantomLink] = useState<string | null>(null);
 
   // Detection needs the browser, so it runs after mount to keep SSR output stable.
   useEffect(() => {
     setDetected(detectedWallets());
+    setPhantomLink(isMobileBrowser() ? phantomBrowseUrl() : null);
   }, []);
 
   const walletConnectReady = Boolean(PROJECT_ID);
@@ -117,6 +121,16 @@ export function WalletPicker() {
           </li>
         ))}
       </ul>
+
+      {/* On a phone there is no extension to detect, so offer the in-app browser. */}
+      {phantomLink && detected?.phantom === false && (
+        <a
+          href={phantomLink}
+          className="mt-3 block rounded-xl border border-white/[.08] bg-white/[.03] px-3 py-2 text-center text-[11.5px] text-white/60 hover:border-lilac/40 hover:text-white"
+        >
+          On mobile? Open VETTO inside Phantom
+        </a>
+      )}
 
       {error && (
         <p role="alert" className="mt-3 rounded-xl border border-coral/30 bg-coral/[.07] px-3 py-2 text-xs leading-relaxed text-coral">

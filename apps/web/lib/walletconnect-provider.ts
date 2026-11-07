@@ -1,6 +1,7 @@
 
 import { WALLET_AUTH_CHAIN_ID } from "@/lib/auth-constants";
-import { chainProfile, networkLabel } from "@/lib/chain-label";
+import { chainProfile } from "@/lib/chain-label";
+import { ensureRobinhoodChain, type Eip1193Provider } from "@/lib/injected-wallet";
 
 const PROJECT_ID = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID;
 
@@ -24,7 +25,13 @@ export async function getWalletProvider(): Promise<WalletProvider> {
       return EthereumProvider.init({
         projectId: PROJECT_ID,
 
-        // The deployment's chain: 4663 mainnet, 46630 testnet.
+        // The deployment's chain only: 4663 mainnet, 46630 testnet.
+        //
+        // Adding eip155:1 here widens the modal's "All Wallets" list, but the session
+        // then settles on mainnet and the provider's own setChainId() throws while
+        // restoring it, which surfaced as "Please connect using Robinhood Chain
+        // Testnet · 46630" on the first execute. A wallet that is not on this chain is
+        // added/switched explicitly by ensureRobinhoodChain instead.
         optionalChains: [WALLET_AUTH_CHAIN_ID],
 
         showQrModal: true,
@@ -83,9 +90,10 @@ export async function getConnectedWallet() {
     throw new Error("No wallet account is connected.");
   }
 
-  if (Number(provider.chainId) !== WALLET_AUTH_CHAIN_ID) {
-    throw new Error(`Please connect using ${networkLabel()}.`);
-  }
+  // Ask the wallet for its chain and offer to switch, instead of reading the
+  // provider's cached chainId — that property is undefined right after a session
+  // restore, which made a correct wallet look like the wrong network.
+  await ensureRobinhoodChain(provider as unknown as Eip1193Provider);
 
   return { provider, address };
 }

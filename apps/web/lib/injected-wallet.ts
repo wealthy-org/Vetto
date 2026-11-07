@@ -57,8 +57,30 @@ export const WALLET_OPTIONS: readonly WalletOption[] = Object.freeze([
   },
 ]);
 
+/**
+ * Open this site inside Phantom's in-app browser, where `window.phantom.ethereum`
+ * is injected. Mobile users have no extension, and WalletConnect's list is not a
+ * reliable way to reach Phantom from a chain it does not advertise, so a deeplink
+ * is the path that actually works. Returns null during SSR.
+ */
+export function phantomBrowseUrl(): string | null {
+  if (typeof window === "undefined") return null;
+
+  const { origin } = window.location;
+  const ref = encodeURIComponent(origin.replace(/^https?:\/\//, ""));
+
+  return `https://phantom.app/ul/browse/${encodeURIComponent(origin)}?ref=${ref}`;
+}
+
+/** True when the visitor is on a phone, where an extension cannot be installed. */
+export function isMobileBrowser(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+}
+
 export interface Eip1193Provider {
-  request(args: { method: string; params?: unknown[] | object }): Promise<unknown>;
+  /** EIP-1193. Call sites pass the expected shape as a type argument and validate it. */
+  request<T = unknown>(args: { method: string; params?: unknown[] | object }): Promise<T>;
   on?(event: string, handler: (...args: unknown[]) => void): void;
   removeListener?(event: string, handler: (...args: unknown[]) => void): void;
 }
@@ -129,13 +151,30 @@ function errorCode(error: unknown): number | undefined {
 }
 
 /**
+ * The chain a provider is on, asked directly.
+ *
+ * Never read `provider.chainId`: WalletConnect instances expose that as a cached
+ * property that is still undefined (or stale) right after a session restore, which
+ * made a perfectly correct wallet look like it was on the wrong network.
+ */
+export async function readChainId(provider: Eip1193Provider): Promise<number | null> {
+  try {
+    const value = await provider.request({ method: "eth_chainId" });
+    const parsed = typeof value === "string" ? Number.parseInt(value, 16) : value;
+    return typeof parsed === "number" && Number.isFinite(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Make sure the wallet is on Robinhood Chain. Wallets that do not know the chain
  * are asked to add it once; if they still refuse, we stop rather than sign on the
  * wrong network.
  */
 export async function ensureRobinhoodChain(provider: Eip1193Provider): Promise<void> {
-  const current = (await provider.request({ method: "eth_chainId" })) as string;
-  if (typeof current === "string" && Number.parseInt(current, 16) === ROBINHOOD_CHAIN_ID) return;
+  const current = await readChainId(provider);
+  if (current === ROBINHOOD_CHAIN_ID) return;
 
   const addChain = {
     chainId: CHAIN_HEX,
@@ -160,11 +199,17 @@ export async function ensureRobinhoodChain(provider: Eip1193Provider): Promise<v
       });
       return;
     }
-    throw new Error(`Switch your wallet to ${networkLabel()} to use VETTO.`);
+    throw new Error(
+      `Your wallet would not switch to ${networkLabel()} (it answered ${code ? `code ${code}` : "with an error"}). ` +
+        `Switch the network in your wallet and try again. Nothing was sent.`,
+    );
   }
 
-  const after = (await provider.request({ method: "eth_chainId" })) as string;
-  if (typeof after !== "string" || Number.parseInt(after, 16) !== ROBINHOOD_CHAIN_ID) {
-    throw new Error(`Switch your wallet to ${networkLabel()} to use VETTO.`);
+  const after = await readChainId(provider);
+  if (after !== ROBINHOOD_CHAIN_ID) {
+    throw new Error(
+      `Your wallet is still on chain ${after ?? "unknown"}, not ${networkLabel()}. ` +
+        `Approve the network prompt in your wallet and try again. Nothing was sent.`,
+    );
   }
 }

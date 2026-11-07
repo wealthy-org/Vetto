@@ -5,7 +5,7 @@ import { formatUnits, type Intent } from "@vetto/intent-parser";
 import type { QuoteResult, RouteQuote } from "@vetto/quote-engine";
 import { formatAmount } from "@/lib/format";
 import { isTestnetDeployment, networkLabel, TESTNET_DISCLOSURE } from "@/lib/chain-label";
-import { getConnectedWallet } from "@/lib/walletconnect-provider";
+import { resolveSendProvider } from "@/lib/execute-provider";
 
 /**
  * Route review panel.
@@ -234,7 +234,9 @@ export function SwapReview({
     const hashes: string[] = [];
 
     try {
-      const { provider, address } = await getConnectedWallet();
+      // Use the wallet that was signed in with and holds this address — not an
+      // unconditional WalletConnect modal.
+      const { provider, address } = await resolveSendProvider(prepared?.wallet ?? "");
 
       for (const step of approvals) {
         const hash = await provider.request<string>({
@@ -282,7 +284,7 @@ export function SwapReview({
     setError("");
 
     try {
-      const { provider, address } = await getConnectedWallet();
+      const { provider, address } = await resolveSendProvider(prepared.wallet);
 
       if (address.toLowerCase() !== prepared.wallet.toLowerCase()) {
         throw new Error(
