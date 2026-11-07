@@ -1,5 +1,6 @@
 
 import { WALLET_AUTH_CHAIN_ID } from "@/lib/auth-constants";
+import { chainProfile, networkLabel } from "@/lib/chain-label";
 
 const PROJECT_ID = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID;
 
@@ -23,7 +24,7 @@ export async function getWalletProvider(): Promise<WalletProvider> {
       return EthereumProvider.init({
         projectId: PROJECT_ID,
 
-        // Robinhood Chain Mainnet
+        // The deployment's chain: 4663 mainnet, 46630 testnet.
         optionalChains: [WALLET_AUTH_CHAIN_ID],
 
         showQrModal: true,
@@ -46,8 +47,7 @@ export async function getWalletProvider(): Promise<WalletProvider> {
         ],
 
         rpcMap: {
-            [WALLET_AUTH_CHAIN_ID]:
-            "https://rpc.mainnet.chain.robinhood.com",
+            [WALLET_AUTH_CHAIN_ID]: chainProfile().rpcPrimary,
         },
 
         metadata: {
@@ -84,7 +84,7 @@ export async function getConnectedWallet() {
   }
 
   if (Number(provider.chainId) !== WALLET_AUTH_CHAIN_ID) {
-    throw new Error("Please connect using Robinhood Chain (4663).");
+    throw new Error(`Please connect using ${networkLabel()}.`);
   }
 
   return { provider, address };

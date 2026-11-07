@@ -1,5 +1,10 @@
 import { createPublicClient, getAddress, http, type Address } from "viem";
 
+import { activeProfile } from "./chain-profile";
+
+/** The deployment's chain: mainnet by default, testnet when VETTO_CHAIN_PROFILE=testnet. */
+const PROFILE = activeProfile();
+
 /**
  * Single source of truth for Robinhood Chain bindings used by quoting, simulation
  * and receipt reconciliation.
@@ -19,27 +24,24 @@ import { createPublicClient, getAddress, http, type Address } from "viem";
  * display-only unless a simulation from the user's own wallet passes.
  */
 
-export const ROBINHOOD_CHAIN_ID = 4663;
+export const ROBINHOOD_CHAIN_ID = PROFILE.chainId;
 
 export const CHAIN = {
-  id: ROBINHOOD_CHAIN_ID,
-  name: "Robinhood Chain",
-  nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-  explorer: "https://robinhoodchain.blockscout.com",
+  id: PROFILE.chainId,
+  name: PROFILE.name,
+  nativeCurrency: PROFILE.nativeCurrency,
+  explorer: PROFILE.explorer,
 } as const;
 
-export const CONTRACTS = {
-  poolManager: getAddress("0x8366a39CC670B4001A1121B8F6A443A643e40951"),
-  v4Quoter: getAddress("0x8dc178eFB8111BB0973Dd9d722ebeFF267c98F94"),
-  universalRouter: getAddress("0x8876789976dEcBfCbBbe364623C63652db8C0904"),
-  permit2: getAddress("0x000000000022D473030F116dDEE9F6B43aC78BA3"),
-} as const;
+export const IS_TESTNET = PROFILE.isTestnet;
 
-/** USDG on Robinhood Chain. Identity must be confirmed by the project owner. */
+export const CONTRACTS = PROFILE.contracts;
+
+/** The quote asset for this chain: USDG on mainnet, the test token on testnet. */
 export const USDG = {
-  address: getAddress("0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168"),
-  symbol: "USDG",
-  decimals: 6,
+  address: PROFILE.quoteAsset.address,
+  symbol: PROFILE.quoteAsset.symbol,
+  decimals: PROFILE.quoteAsset.decimals,
 } as const;
 
 export const NATIVE_ETH = {
@@ -68,58 +70,46 @@ export interface PoolVenue {
  * successful, repeatable quote from two providers is evidence the pool exists
  * with this exact key — it is not evidence of deep liquidity at your size.
  */
-export const POOL_VENUES: readonly PoolVenue[] = Object.freeze([
-  {
-    id: "rh-v4-eth-usdg-500",
-    label: "Uniswap v4 · ETH/USDG · 0.05%",
-    poolKey: {
-      currency0: NATIVE_ETH.address,
-      currency1: USDG.address,
-      fee: 500,
-      tickSpacing: 10,
-      hooks: "0x0000000000000000000000000000000000000000",
-    },
-  },
-  {
-    id: "rh-v4-eth-usdg-3000",
-    label: "Uniswap v4 · ETH/USDG · 0.30%",
-    poolKey: {
-      currency0: NATIVE_ETH.address,
-      currency1: USDG.address,
-      fee: 3000,
-      tickSpacing: 60,
-      hooks: "0x0000000000000000000000000000000000000000",
-    },
-  },
-  {
-    id: "rh-v4-eth-usdg-10000",
-    label: "Uniswap v4 · ETH/USDG · 1.00%",
-    poolKey: {
-      currency0: NATIVE_ETH.address,
-      currency1: USDG.address,
-      fee: 10000,
-      tickSpacing: 200,
-      hooks: "0x0000000000000000000000000000000000000000",
-    },
-  },
-]);
+export const POOL_VENUES: readonly PoolVenue[] = PROFILE.venues;
 
 export function findVenue(id: string): PoolVenue | undefined {
   return POOL_VENUES.find((venue) => venue.id === id);
 }
 
 /** Default RPCs: one official endpoint plus an independently operated one. */
-export const DEFAULT_RPC_PRIMARY = "https://rpc.mainnet.chain.robinhood.com";
-export const DEFAULT_RPC_SECONDARY = "https://robinhood.drpc.org";
+export const DEFAULT_RPC_PRIMARY = PROFILE.rpcPrimary;
+export const DEFAULT_RPC_SECONDARY = PROFILE.rpcSecondary;
+
+/**
+ * RPC endpoints for the active profile.
+ *
+ * The overrides are profile-qualified on purpose: `VETTO_CHAIN_PROFILE=testnet`
+ * must never be served by `ROBINHOOD_RPC_URL_PRIMARY`, which points at mainnet
+ * in every existing deployment. A testnet deployment that needs a private
+ * endpoint sets `ROBINHOOD_TESTNET_RPC_URL_PRIMARY` instead.
+ */
+export function rpcUrlsFor(
+  profile: { isTestnet: boolean; rpcPrimary: string; rpcSecondary: string | null },
+  environment: NodeJS.ProcessEnv = process.env,
+): { primary: string; secondary: string | null } {
+  const prefix = profile.isTestnet ? "ROBINHOOD_TESTNET_RPC_URL" : "ROBINHOOD_RPC_URL";
+
+  const override = (suffix: "PRIMARY" | "SECONDARY", fallback: string | null) => {
+    const key = `${prefix}_${suffix}` as keyof NodeJS.ProcessEnv;
+    return environment[key]?.trim() || fallback;
+  };
+
+  return {
+    primary: override("PRIMARY", profile.rpcPrimary) as string,
+    secondary: override("SECONDARY", profile.rpcSecondary),
+  };
+}
 
 export function rpcUrls(environment: NodeJS.ProcessEnv = process.env): {
   primary: string;
   secondary: string | null;
 } {
-  return {
-    primary: environment.ROBINHOOD_RPC_URL_PRIMARY?.trim() || DEFAULT_RPC_PRIMARY,
-    secondary: environment.ROBINHOOD_RPC_URL_SECONDARY?.trim() || DEFAULT_RPC_SECONDARY,
-  };
+  return rpcUrlsFor(PROFILE, environment);
 }
 
 export function rpcClient(url: string, timeoutMs = 12_000) {

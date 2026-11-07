@@ -4,6 +4,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { WALLET_AUTH_CHAIN_ID } from "@/lib/auth-constants";
+import { networkLabel } from "@/lib/chain-label";
 import { IconLock } from "./icons";
 import { getWalletProvider } from "@/lib/walletconnect-provider";
 
@@ -79,7 +80,7 @@ export function WalletConnectSignIn({
 
       if (Number(provider.chainId) !== WALLET_AUTH_CHAIN_ID) {
         throw new Error(
-          "Please connect using Robinhood Chain (4663).",
+          `Please connect using ${networkLabel()}.`,
         );
       }
 
@@ -182,7 +183,7 @@ export function WalletConnectSignIn({
 
       {configured && (
         <p className="mt-2 text-xs text-white/40">
-          Secure wallet authentication on Robinhood Chain (4663).
+          Secure wallet authentication on {networkLabel()}.
           Signing in does not authorize or send transactions.
         </p>
       )}

@@ -1,6 +1,10 @@
 import type { CapabilityStatus } from "@vetto/quote-engine";
+import { serverProfile } from "./chain-profile";
 import { CAPABILITIES } from "@vetto/quote-engine";
 import type { DocIconName } from "@/components/docs/doc-icons";
+
+/** The chain this deployment documents, so the docs cannot contradict the app. */
+const DOC_CHAIN = serverProfile();
 
 /**
  * Docs copy lives here as typed blocks so the pages stay layout-only and the
@@ -59,7 +63,7 @@ export const DOC_PAGES: DocPage[] = [
       {
         k: "hint",
         tone: "info",
-        text: "Vetto runs on Robinhood Chain (chain ID 4663). Quotes come from Uniswap v4 pools on that chain — not from a simulation and not from fixture data.",
+        text: `Vetto runs on ${DOC_CHAIN.name} (chain ID ${DOC_CHAIN.chainId}). Quotes come from Uniswap v4 pools on that chain — not from a simulation and not from fixture data.${DOC_CHAIN.isTestnet ? " This is a testnet deployment: the funds it moves have no value." : ""}`,
       },
       { k: "steps", items: [
         { title: "Open the app", body: "Go to /app. The landing page opens the same place; there is no separate sign-in step in the navigation." },
@@ -274,7 +278,7 @@ export const DOC_PAGES: DocPage[] = [
     lead: "Signing in proves you hold the address. It is not permission to trade.",
     icon: "wallet",
     blocks: [
-      { k: "p", text: "Sign in with a browser wallet — Phantom, MetaMask, Rabby, Coinbase Wallet — or WalletConnect with any wallet that supports chain 4663. A wallet that does not know the chain is asked to add it once." },
+      { k: "p", text: `Sign in with a browser wallet — Phantom, MetaMask, Rabby, Coinbase Wallet — or WalletConnect with any wallet that supports chain ${DOC_CHAIN.chainId}. A wallet that does not know the chain is asked to add it once.` },
       { k: "h2", id: "what-sign-in-grants", text: "What sign-in grants" },
       { k: "ul", items: [
         "A session cookie tied to the address you proved you hold.",
@@ -298,8 +302,9 @@ export const DOC_PAGES: DocPage[] = [
         { q: "Does Private make me untraceable?", a: "No. Private submission would only delay when the transaction hits the public mempool. It is unavailable on this chain today." },
         { q: "Does a clean link check mean a site is safe?", a: "No. Vetto runs passive checks only and does not visit the site. Something can always be missed." },
         { q: "Why a separate burner wallet for tasks?", a: "So a malicious page or a bug can cost at most the small amount you funded — and never your main wallet." },
-        { q: "Which chain is this?", a: "Robinhood Chain, chain ID 4663, gas in ETH. Token addresses come from a fixed registry, not from the page you pasted." },
+        { q: "Which chain is this?", a: `${DOC_CHAIN.name}, chain ID ${DOC_CHAIN.chainId}, gas in ETH. Token addresses come from a fixed registry, not from the page you pasted.` },
         { q: "Why is signing sometimes unavailable?", a: "Execution is opt-in per deployment. Until an operator runs a funded receipt test, the server refuses to prepare a signable payload and says why." },
+        { q: "Why does it say free-form parsing is off?", a: "The optional AI parser is configured with an operator key. When that provider rejects the key (or is rate-limited), Vetto skips it and keeps going with the built-in parser: swaps like “swap 0.1 ETH to USDG” and link checks still work, and the message says nothing was executed. The deployment health is reported as `llmParser` on `/api/capabilities`." },
         { q: "Does Vetto store my messages?", a: "Only when you are signed in, scoped to your address, and only the parsed request — never a seed phrase, which is rejected before parsing." },
       ] },
     ],

@@ -75,6 +75,10 @@ export async function POST(req: Request) {
 
   const ctx = parseContext(g.body.context);
   const result = await parseIntentWithLlm(g.body.text, ctx, configuredLlmParser());
-  await auditFor(req, { action: "intent.parse", intentKind: result.intent.kind }); // never the raw text
+  await auditFor(req, {
+    action: "intent.parse",
+    intentKind: result.intent.kind, // never the raw text
+    ...(result.warningCode ? { decision: result.warningCode } : {}),
+  });
   return jsonOk(result);
 }

@@ -1,4 +1,5 @@
 import { CHAIN, ROBINHOOD_CHAIN_ID, rpcUrls } from "./robinhood-chain";
+import { networkLabel } from "./chain-label";
 
 /**
  * Wallet discovery and chain preparation for injected (browser) wallets.
@@ -159,11 +160,11 @@ export async function ensureRobinhoodChain(provider: Eip1193Provider): Promise<v
       });
       return;
     }
-    throw new Error("Switch your wallet to Robinhood Chain (4663) to use VETTO.");
+    throw new Error(`Switch your wallet to ${networkLabel()} to use VETTO.`);
   }
 
   const after = (await provider.request({ method: "eth_chainId" })) as string;
   if (typeof after !== "string" || Number.parseInt(after, 16) !== ROBINHOOD_CHAIN_ID) {
-    throw new Error("Switch your wallet to Robinhood Chain (4663) to use VETTO.");
+    throw new Error(`Switch your wallet to ${networkLabel()} to use VETTO.`);
   }
 }

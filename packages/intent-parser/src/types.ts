@@ -17,6 +17,8 @@ export interface ParseResult {
   intent: Intent;
   label: string;
   warning?: string;
+  /** Machine-readable reason for `warning`, so the UI and logs can act without parsing English. */
+  warningCode?: "llm-auth" | "llm-model" | "llm-quota" | "llm-timeout" | "llm-unavailable" | "llm-invalid";
   pendingIntent?: PendingIntent;
 }
 

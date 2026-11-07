@@ -21,18 +21,22 @@ const EXECUTION_IDS = ["permit2-approval", "transaction-prepare", "execution-his
 export type DeploymentFacts = {
   executionEnabled: boolean;
   databaseConfigured: boolean;
+  /** "off" = no key configured (deterministic parser only), "ok" = a key exists, "cooling" = the provider rejected it recently. */
+  llmParser: "off" | "ok" | "cooling";
 };
 
 export function deploymentFacts(
   environment: NodeJS.ProcessEnv = process.env,
-  probe: { databaseReachable?: boolean } = {},
+  probe: { databaseReachable?: boolean; llmCooldownMs?: number } = {},
 ): DeploymentFacts {
+  const keyConfigured = typeof environment.LLM_API_KEY === "string" && environment.LLM_API_KEY.trim().length > 0;
   return {
     executionEnabled: swapExecutionEnabled(environment),
     databaseConfigured:
       typeof environment.DATABASE_URL === "string" &&
       environment.DATABASE_URL.trim().length > 0 &&
       probe.databaseReachable !== false,
+    llmParser: !keyConfigured ? "off" : (probe.llmCooldownMs ?? 0) > 0 ? "cooling" : "ok",
   };
 }
 

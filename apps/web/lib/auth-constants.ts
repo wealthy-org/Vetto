@@ -1,4 +1,7 @@
-export const ROBINHOOD_CHAIN_ID = 4663;
+import { activeProfile } from "./chain-profile";
+
+/** Chain of the active deployment: 4663 on mainnet, 46630 on testnet. */
+export const ROBINHOOD_CHAIN_ID = activeProfile().chainId;
 export const WALLET_AUTH_CHAIN_ID = ROBINHOOD_CHAIN_ID;
 
 export const WALLET_AUTH_CHAIN_IDS = [

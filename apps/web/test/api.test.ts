@@ -467,10 +467,13 @@ test("POST /api/intent reports a safe warning when the provider rejects the requ
     );
 
     assert.equal(body.intent.kind, "chat");
-    assert.match(body.warning, /HTTP 400.*LLM_MODEL/);
+    assert.equal(body.warningCode, "llm-model");
+    // The person gets a usable line; the provider detail stays in the server log.
+    assert.match(body.warning, /Free-form parsing is off/);
+    assert.match(body.warning, /Nothing was executed\./);
     assert.doesNotMatch(
       body.warning,
-      /Requested entity|test-key|invalid-model/
+      /Requested entity|test-key|invalid-model|HTTP 400/
     );
 
     assert.ok(

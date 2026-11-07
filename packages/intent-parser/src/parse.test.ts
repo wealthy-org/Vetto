@@ -295,11 +295,11 @@ test("LLM errors are visible as a safe fallback warning", async () => {
   );
 
   assert.equal(parsed.intent.kind, "chat");
-  assert.match(
-    parsed.warning ?? "",
-    /verify LLM_API_KEY, LLM_API_URL, and LLM_MODEL/,
-  );
-  assert.doesNotMatch(parsed.warning ?? "", /secret details/);
+  assert.equal(parsed.warningCode, "llm-invalid");
+  assert.match(parsed.warning ?? "", /swaps and link checks still work/i);
+  assert.match(parsed.warning ?? "", /Nothing was executed\./);
+  // Provider internals stay in the server log, never in the chat bubble.
+  assert.doesNotMatch(parsed.warning ?? "", /secret details|LLM_API_KEY|HTTP \d{3}/);
 });
 
 test("provider HTTP errors produce actionable safe guidance", async () => {
@@ -311,10 +311,9 @@ test("provider HTTP errors produce actionable safe guidance", async () => {
     },
   );
 
-  assert.match(
-    throttled.warning ?? "",
-    /HTTP 429.*free-tier quota or rate limit/,
-  );
+  assert.equal(throttled.warningCode, "llm-quota");
+  assert.match(throttled.warning ?? "", /rate-limited/i);
+  assert.doesNotMatch(throttled.warning ?? "", /HTTP 429/);
 
   const missingModel = await parseIntentWithLlm(
     "ubah eth saya ke USDG",
@@ -324,7 +323,24 @@ test("provider HTTP errors produce actionable safe guidance", async () => {
     },
   );
 
-  assert.match(missingModel.warning ?? "", /HTTP 404.*LLM_MODEL/);
+  assert.equal(missingModel.warningCode, "llm-model");
+  assert.match(missingModel.warning ?? "", /Free-form parsing is off/i);
+});
+
+test("a rejected API key reads as a deployment limit, not a crash", async () => {
+  const rejected = await parseIntentWithLlm(
+    "ubah eth saya ke USDG",
+    {},
+    async () => {
+      throw new Error("LLM_PROVIDER_HTTP_401");
+    },
+  );
+
+  assert.equal(rejected.intent.kind, "chat");
+  assert.equal(rejected.warningCode, "llm-auth");
+  assert.match(rejected.warning ?? "", /Free-form parsing is off on this deployment/);
+  assert.match(rejected.warning ?? "", /swap 0\.1 ETH to USDG/);
+  assert.match(rejected.warning ?? "", /Nothing was executed\./);
 });
 
 test("LLM timeouts explain the delay and safe retry", async () => {

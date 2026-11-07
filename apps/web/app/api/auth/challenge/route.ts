@@ -9,6 +9,7 @@ import {
   isRecord,
   requestOriginOf,
 } from "@/lib/http";
+import { networkLabel } from "@/lib/chain-label";
 import { getPool } from "@/lib/db";
 import { failureFields } from "@/lib/setup-hints";
 import {
@@ -28,7 +29,7 @@ export async function POST(request: Request) {
   if (!address) return jsonError(400, "A valid EVM wallet address is required.");
   const chainId = guarded.body.chainId === undefined ? WALLET_AUTH_CHAIN_ID : guarded.body.chainId;
   if (!isWalletAuthChainId(chainId)) {
-    return jsonError(400, "Wallet sign-in supports Ethereum Mainnet (1) or Robinhood Chain (4663).");
+    return jsonError(400, `Wallet sign-in supports Ethereum Mainnet (1) or ${networkLabel()}.`);
   }
 
   const databaseUrl = process.env.DATABASE_URL;

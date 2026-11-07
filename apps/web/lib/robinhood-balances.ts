@@ -1,6 +1,8 @@
 import { decodeAbiParameters, getAddress, type Hex } from "viem";
 
-const ROBINHOOD_CHAIN_ID = 4663n;
+import { activeProfile } from "./chain-profile";
+
+const ROBINHOOD_CHAIN_ID = BigInt(activeProfile().chainId);
 const USDG_SYMBOL = "USDG";
 const USDG_DECIMALS = 6;
 
@@ -135,7 +137,7 @@ export async function readRobinhoodBalances({
       rpcCall(rpc, "eth_blockNumber", [], fetchImpl),
     ]);
     const chainId = quantity(chainRaw, `${rpc.name} chain ID`);
-    if (chainId !== ROBINHOOD_CHAIN_ID) throw new Error(`${rpc.name} RPC is not on Robinhood Chain (4663).`);
+    if (chainId !== ROBINHOOD_CHAIN_ID) throw new Error(`${rpc.name} RPC is not on ${activeProfile().name} (${activeProfile().chainId}).`);
     return { rpc, blockNumber: quantity(blockRaw, `${rpc.name} block number`) };
   }));
   const commonBlock = heads.reduce((lowest, head) => head.blockNumber < lowest ? head.blockNumber : lowest, heads[0]!.blockNumber);

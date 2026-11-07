@@ -14,6 +14,7 @@ import { capabilityById, type QuoteResult } from "@vetto/quote-engine";
 import { detectSecret, secretMessage, type RiskReport } from "@vetto/safety-policy";
 import { AccountMenu } from "./AccountMenu";
 import { formatAmount } from "@/lib/format";
+import { isTestnetDeployment, networkLabel, networkShortLabel, TESTNET_DISCLOSURE } from "@/lib/chain-label";
 import { Banker } from "./Banker";
 import { Logo, Mark } from "./Logo";
 import { RouteCards } from "./RouteCards";
@@ -85,7 +86,18 @@ const CAP_FOR: Partial<Record<Intent["kind"], string>> = {
   "live-browser": "live-browser",
 };
 
-export function ChatApp() {
+export interface ChainDisplay {
+  label: string;
+  short: string;
+  testnet: boolean;
+}
+
+export function ChatApp({ chain }: { chain?: ChainDisplay } = {}) {
+  const chainView: ChainDisplay = chain ?? {
+    label: networkLabel(),
+    short: networkShortLabel(),
+    testnet: isTestnetDeployment(),
+  };
   const params = useSearchParams();
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
@@ -353,7 +365,7 @@ export function ChatApp() {
             ? i.question
             : i.kind === "chat"
               ? result.warning ??
-                "I can quote swaps, inspect links before you connect, and (soon) run capped burner tasks. What would you like?"
+                "I can quote swaps and check links before you connect. Try “swap 0.1 ETH to USDG” or paste a link. Nothing runs until you approve it."
               : "Here’s how I read that.",
         result,
         ...(CAP_FOR[i.kind] ? { capId: CAP_FOR[i.kind]! } : {}),
@@ -519,9 +531,13 @@ export function ChatApp() {
           <Link href="/" aria-label="VETTO home">
             <Logo />
           </Link>
-          <span className="chip hidden !border-lilac/20 !py-1 text-[11px] text-white/70 sm:inline-flex">
-            <i className="h-1.5 w-1.5 rounded-full bg-mint" />
-            Robinhood Chain
+          <span
+            className={`chip hidden !py-1 text-[11px] sm:inline-flex ${
+              chainView.testnet ? "!border-peach/30 text-peach" : "!border-lilac/20 text-white/70"
+            }`}
+          >
+            <i className={`h-1.5 w-1.5 rounded-full ${chainView.testnet ? "bg-peach" : "bg-mint"}`} />
+            {chainView.short}
           </span>
         </div>
         <div className="flex items-center gap-2 sm:gap-3">
@@ -542,6 +558,16 @@ export function ChatApp() {
           </Link>
         </div>
       </header>
+
+      {/* A testnet deployment says so on every screen, above the fold. */}
+      {chainView.testnet && (
+        <p
+          role="note"
+          className="border-b border-peach/20 bg-peach/[.07] px-3 py-1.5 text-center text-[11px] text-peach sm:px-4"
+        >
+          {TESTNET_DISCLOSURE}
+        </p>
+      )}
 
       <div className="grid min-h-0 min-w-0 flex-1 lg:grid-cols-[minmax(0,296px)_minmax(0,1fr)_minmax(0,356px)]">
         {/* LEFT — conversation, history, transactions */}
@@ -735,6 +761,7 @@ export function ChatApp() {
             selectedPath={selectedPath}
             onSelectPath={setSelectedPath}
             onRecorded={() => setTxRefresh((value) => value + 1)}
+            chain={chainView}
           />
         </aside>
       </div>
@@ -968,11 +995,13 @@ function Panel({
   selectedPath,
   onSelectPath,
   onRecorded,
+  chain,
 }: {
   msg: Msg | undefined;
   selectedPath: string | null;
   onSelectPath: (executionPathId: string) => void;
   onRecorded: () => void;
+  chain?: ChainDisplay;
 }) {
   const intent = msg?.result?.intent;
 
@@ -997,6 +1026,7 @@ function Panel({
         selectedPath={selectedPath}
         onSelectPath={onSelectPath}
         onRecorded={onRecorded}
+        chain={chain}
       />
     );
   }

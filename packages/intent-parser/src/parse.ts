@@ -5,23 +5,51 @@ import { IntentValidationError, validateIntent } from "./validate.ts";
 
 const MAX_INPUT = 500;
 const MAX_SLIPPAGE_BPS = 1000; // 10% hard ceiling
-const fallbackWarning = (error?: unknown) => {
-  const errorCode = error instanceof Error ? error.message : undefined;
-  const providerStatus = errorCode ? /^LLM_PROVIDER_HTTP_(\d{3})$/.exec(errorCode)?.[1] : undefined;
-  if (errorCode === "LLM_PROVIDER_TIMEOUT") {
-    return "AI parser timed out after 45 seconds. Check the configured AI provider and try again. Nothing was executed.";
+/**
+ * A failed LLM call must not read like a crash. The person sees one short line:
+ * what still works, and that nothing happened. The operator-facing detail (which
+ * variable to check, the provider status) belongs in the server log and the audit
+ * trail, not in the chat bubble.
+ */
+export type ParseWarningCode =
+  | "llm-auth"
+  | "llm-model"
+  | "llm-quota"
+  | "llm-timeout"
+  | "llm-unavailable"
+  | "llm-invalid";
+
+const STILL_WORKS = "Swaps and link checks still work: try “swap 0.1 ETH to USDG” or paste a link.";
+
+const warningFor = (code: ParseWarningCode): string => {
+  switch (code) {
+    case "llm-auth":
+      return `Free-form parsing is off on this deployment. ${STILL_WORKS} Nothing was executed.`;
+    case "llm-model":
+      return `Free-form parsing is off on this deployment. ${STILL_WORKS} Nothing was executed.`;
+    case "llm-quota":
+      return `Free-form parsing is rate-limited right now. ${STILL_WORKS} Nothing was executed.`;
+    case "llm-timeout":
+      return `Free-form parsing took too long and was skipped. ${STILL_WORKS} Nothing was executed.`;
+    case "llm-unavailable":
+      return `Free-form parsing is unreachable right now. ${STILL_WORKS} Nothing was executed.`;
+    case "llm-invalid":
+    default:
+      return `Free-form parsing could not read that. ${STILL_WORKS} Nothing was executed.`;
   }
-  const providerHint = providerStatus === "400" || providerStatus === "404"
-    ? `The provider returned HTTP ${providerStatus}; verify that LLM_MODEL is available and the API URL is correct.`
-    : providerStatus === "401" || providerStatus === "403"
-      ? `The provider returned HTTP ${providerStatus}; verify the API key and provider access.`
-      : providerStatus === "429"
-        ? "The provider returned HTTP 429; its free-tier quota or rate limit may have been reached."
-        : providerStatus
-          ? `The provider returned HTTP ${providerStatus}; check the Next.js terminal for details.`
-          : "Check the Next.js terminal and verify LLM_API_KEY, LLM_API_URL, and LLM_MODEL.";
-  return `AI parser failed. ${providerHint} You can phrase swaps as “swap 0.1 ETH to USDG”. Nothing was executed.`;
 };
+
+function classifyFailure(error: unknown): ParseWarningCode {
+  const raw = error instanceof Error ? error.message : "";
+  if (raw === "LLM_PROVIDER_TIMEOUT") return "llm-timeout";
+  if (raw === "LLM_PROVIDER_DISABLED") return "llm-auth";
+  const status = /^LLM_PROVIDER_HTTP_(\d{3})$/.exec(raw)?.[1];
+  if (status === "401" || status === "403") return "llm-auth";
+  if (status === "400" || status === "404") return "llm-model";
+  if (status === "429") return "llm-quota";
+  if (status) return "llm-unavailable";
+  return "llm-invalid";
+}
 
 const URL_RE =
   /\b(?:https?:\/\/)?(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}(?::\d+)?(?:\/[^\s?#]*)?(?:\?[^\s#]*)?(?:#\S*)?/i;
@@ -219,48 +247,37 @@ export async function parseIntentWithLlm(
 
     return {
       ...first,
-      warning: fallbackWarning(),
+      warning: warningFor("llm-invalid"),
+      warningCode: "llm-invalid",
     };
     } catch (error) {
-    if (
-      error instanceof Error &&
-      error.message === "LLM_PROVIDER_TIMEOUT"
-    ) {
-      return {
-        ...clarify(
-          "The AI parser timed out. Please specify the amount and token pair explicitly, then try again.",
-        ),
-        warning: fallbackWarning(error),
-      };
-    }
-
-    if (
-      error instanceof Error &&
-      /^LLM_PROVIDER_HTTP_\d{3}$/.test(error.message)
-    ) {
-      return {
-        ...first,
-        warning: fallbackWarning(error),
-      };
-    }
-
     if (error instanceof IntentValidationError) {
-      console.warn(
-        "LLM returned an invalid intent; asking for clarification.",
-      );
+      console.warn("LLM returned an invalid intent; asking for clarification.");
 
       return clarify(
         "I could not verify the requested swap. Please specify the amount and token pair explicitly.",
       );
     }
 
+    const code = classifyFailure(error);
     console.warn(
-      "LLM intent response was unusable; using deterministic fallback.",
+      `LLM intent parsing unavailable (${code}); deterministic fallback used.`,
     );
+
+    if (code === "llm-timeout") {
+      return {
+        ...clarify(
+          "Free-form parsing took too long. Please specify the amount and token pair explicitly, for example: swap 0.1 ETH to USDG.",
+        ),
+        warning: warningFor(code),
+        warningCode: code,
+      };
+    }
 
     return {
       ...first,
-      warning: fallbackWarning(),
+      warning: warningFor(code),
+      warningCode: code,
     };
   }
 }

@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { formatUnits } from "viem";
 
+import { networkShortLabel } from "@/lib/chain-label";
+
 interface WalletBalancesResponse {
   address: string;
   commonBlock: string;
@@ -72,11 +74,11 @@ export function WalletBalances() {
       {open && (
         <section
           id="wallet-balances-panel"
-          aria-label="Robinhood Chain wallet balances"
+          aria-label={`${networkShortLabel()} wallet balances`}
           className="absolute right-0 top-full z-50 mt-3 w-[min(22rem,calc(100vw-2rem))] rounded-2xl border border-white/10 bg-panel p-4 shadow-2xl"
         >
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-semibold">Robinhood Chain</h2>
+            <h2 className="text-sm font-semibold">{networkShortLabel()}</h2>
             <button type="button" onClick={() => setOpen(false)} aria-label="Close balances" className="text-white/50 hover:text-white">×</button>
           </div>
           {state.kind === "idle" || state.kind === "loading" ? <p role="status" className="text-xs text-white/55">Checking balances across two RPCs…</p> : null}

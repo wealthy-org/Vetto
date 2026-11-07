@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { networkLabel } from "@/lib/chain-label";
 import { Banker, SpeechBubble } from "./Banker";
 import { Logo } from "./Logo";
 import { WalletPicker } from "./WalletPicker";
@@ -74,7 +75,7 @@ export function AuthShell() {
               className="absolute bottom-[-26px] left-1/2 h-[500px] w-auto -translate-x-1/2"
             />
             <div className="absolute inset-x-5 bottom-4 z-10 flex items-center justify-between text-[11px] text-white/45">
-              <span>Robinhood Chain · 4663</span>
+              <span>{networkLabel()}</span>
               <span>read-only until you sign</span>
             </div>
           </section>

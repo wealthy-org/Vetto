@@ -71,7 +71,7 @@ export async function POST(request: Request) {
   const wallet = await getPool(databaseUrl).query<WalletRow>(
     `select address, chain_id
      from wallet_identities
-     where user_id = $1 and chain_id = '4663'
+     where user_id = $1 and chain_id = '${ROBINHOOD_CHAIN_ID}'
      order by last_seen_at desc
      limit 1`,
     [userId],

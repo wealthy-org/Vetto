@@ -7,6 +7,24 @@ const MAX_RESPONSE_BYTES = 16_384;
 const MAX_ERROR_MESSAGE_LENGTH = 500;
 const REQUEST_TIMEOUT_MS = 45_000;
 
+/**
+ * A rejected key or an exhausted quota will not fix itself between two messages.
+ * After one of those answers the parser takes itself out of rotation for a while,
+ * so people get the deterministic path instantly instead of the same 401.
+ */
+const COOLDOWN_MS: Record<"auth" | "quota", number> = { auth: 10 * 60_000, quota: 60_000 };
+const cooldownUntil: Record<"auth" | "quota", number> = { auth: 0, quota: 0 };
+
+export function llmCooldownRemaining(now = Date.now()): number {
+  return Math.max(0, Math.max(cooldownUntil.auth, cooldownUntil.quota) - now);
+}
+
+/** Test seam: forget any recorded cooldown. */
+export function resetLlmCooldown() {
+  cooldownUntil.auth = 0;
+  cooldownUntil.quota = 0;
+}
+
 async function providerErrorMessage(response: Response, apiKey: string): Promise<string | undefined> {
   try {
     const body: unknown = await response.json();
@@ -45,11 +63,15 @@ export function createLlmParser(
   endpoint = DEFAULT_ENDPOINT,
   model = DEFAULT_MODEL,
   fetchImpl: typeof fetch = fetch,
+  /** Some OpenAI-compatible providers reject unknown fields, so this is opt-in. */
+  reasoningEffort?: string,
 ): LlmParser {
   const url = assertSafeEndpoint(endpoint);
   const symbols = listAssets().map((asset) => asset.symbol).join(", ");
 
   return async (text, context) => {
+    if (llmCooldownRemaining() > 0) throw new Error("LLM_PROVIDER_DISABLED");
+
     let response: Response;
     try {
       response = await fetchImpl(url, {
@@ -61,7 +83,7 @@ export function createLlmParser(
         body: JSON.stringify({
           model,
           temperature: 0,
-          reasoning_effort: "low",
+          ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
           max_tokens: 128,
           response_format: { type: "json_object" },
           messages: [
@@ -98,9 +120,23 @@ export function createLlmParser(
 
     if (!response.ok) {
       const detail = await providerErrorMessage(response, apiKey);
-      console.warn(
-        `LLM intent provider returned HTTP ${response.status}${detail ? `: ${detail}` : "."}`,
-      );
+      const kind = response.status === 401 || response.status === 403
+        ? "auth"
+        : response.status === 429
+          ? "quota"
+          : undefined;
+      if (kind) {
+        cooldownUntil[kind] = Date.now() + COOLDOWN_MS[kind];
+        console.warn(
+          `LLM intent provider rejected requests (HTTP ${response.status}${detail ? `: ${detail}` : ""}). ` +
+            `Falling back to the deterministic parser for ${Math.round(COOLDOWN_MS[kind] / 1000)}s. ` +
+            "Check LLM_API_KEY and provider access.",
+        );
+      } else {
+        console.warn(
+          `LLM intent provider returned HTTP ${response.status}${detail ? `: ${detail}` : "."}`,
+        );
+      }
       throw new Error(`LLM_PROVIDER_HTTP_${response.status}`);
     }
     const contentLength = Number(response.headers.get("content-length"));
@@ -149,6 +185,8 @@ export function configuredLlmParser(): LlmParser | undefined {
       apiKey,
       process.env.LLM_API_URL?.trim() || DEFAULT_ENDPOINT,
       process.env.LLM_MODEL?.trim() || DEFAULT_MODEL,
+      fetch,
+      process.env.LLM_REASONING_EFFORT?.trim() || undefined,
     );
   } catch {
     console.error("LLM intent parser configuration is invalid.");

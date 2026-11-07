@@ -21,6 +21,7 @@ copied from a local `.env.local`. Everything below is verified against
 | `ROBINHOOD_RPC_URL_PRIMARY` / `_SECONDARY` | Own RPC endpoints instead of the public defaults. | Public endpoints from `lib/robinhood-chain.ts` are used (rate-limited, fine for a demo). |
 | `ROBINHOOD_USDG_ADDRESS` | Pins the USDG token address. | Falls back to the built-in registry value. Verify against an official source. |
 | `LLM_API_KEY` (+ `LLM_API_URL`, `LLM_MODEL`) | Optional LLM intent parsing on top of the deterministic parser. | Deterministic parser only — no failure, just less fuzzy matching. |
+| ↳ when the key is rejected | A 401/403/429 disables the LLM parser for 10 min (auth) or 60 s (quota); people see one calm line, never the provider error. | Watch `llmParser` on `GET /api/capabilities`: `ok` / `cooling` / `off`. |
 
 ## Must NOT be set in production
 
@@ -29,7 +30,8 @@ copied from a local `.env.local`. Everything below is verified against
 | `VETTO_PREVIEW_EMBED` | Relaxes `frame-ancestors` **and** makes state-changing routes accept any `Origin` (preview proxies rewrite `Host`). | Local preview only. |
 | `VETTO_ALLOW_MEMORY_LIMITS` | In-process rate limiter, resets on restart / differs per instance. | Local demo without a database. |
 | `VETTO_SWAP_EXECUTION` | Enables wallet-signed swap submission. | Leave unset until receipt-level testing is done; production defaults to off. |
-| `NEXT_PUBLIC_CHAIN_ID` | Only 4663 is supported; the UI hardcodes the chain. | Harmless, but pointless. |
+| `NEXT_PUBLIC_CHAIN_ID` | Superseded by the chain profile; nothing reads it for routing. | Harmless, but pointless. |
+| `VETTO_CHAIN_PROFILE` / `NEXT_PUBLIC_VETTO_CHAIN_PROFILE` = `testnet` | Moves the deployment to chain 46630 and labels every money surface "test funds only". | Intended for a staging deployment — never on the production domain. |
 
 Secrets (`DATABASE_URL`, `RATE_LIMIT_SALT`, `LLM_API_KEY`, RPC URLs with keys) belong in the
 hosting dashboard only — never in the repo, never in chat.
@@ -92,3 +94,81 @@ deployment can carry a transaction:
 Nothing else is ever promoted by configuration. A relay, solver, market maker,
 burner machine or isolated browser needs a counterparty or compute that hosting
 cannot provide, so those stay Planned / Unavailable on every deployment.
+
+## Testnet mode (chain 46630)
+
+Testnet mode exists so the whole flow — parse, quote, simulate, sign, receipt —
+can be walked end to end with faucet ETH that is worth nothing. It is a *whole
+deployment* switch, never a per-request option:
+
+```bash
+VETTO_CHAIN_PROFILE=testnet            # server: which chain the API quotes and simulates on
+NEXT_PUBLIC_VETTO_CHAIN_PROFILE=testnet # browser: which chain the UI labels
+```
+
+Leave both unset for mainnet (4663). Set both and redeploy: `NEXT_PUBLIC_*` is
+inlined into the browser bundle at build time, so changing it only in the hosting
+dashboard leaves the old bundle labelling the UI. If the two disagree, nothing is
+silently corrected — `GET /api/capabilities` reports `chain.profileMismatch: true`
+and the UI keeps the server's chain for what actually runs.
+
+What changes on testnet:
+
+| | Mainnet (4663) | Testnet (46630) |
+| --- | --- | --- |
+| RPC | `rpc.mainnet.chain.robinhood.com` + `robinhood.drpc.org` | `rpc.testnet.chain.robinhood.com` (no second operator) |
+| Quoter | `0x8dc178…8F94` | `0x4E4744228…EEF31` (bound to the same PoolManager) |
+| UniversalRouter | `0x8876789…0904` | `0x69DcB1b74…23De` (its `v4PoolManager` arg is that PoolManager) |
+| Pools | ETH/USDG 500 / 3000 / 10000 | ETH/HUNT and ETH/DUCKCOIN, fee 0, tick spacing 60, with hooks |
+| Assets | ETH, USDG | ETH, HUNT, DUCK — test tokens, marked unverified |
+| Label | `Robinhood Chain · 4663` | `Robinhood Chain Testnet · 46630` + a "test funds only" banner |
+
+RPC overrides are profile-qualified: `ROBINHOOD_RPC_URL_*` is read on mainnet
+only, `ROBINHOOD_TESTNET_RPC_URL_*` on testnet only. That way an existing
+deployment's mainnet endpoint cannot silently serve quotes for chain 46630.
+
+Permit2 is the canonical `0x000000000022D473030F116dDEE9F6B43aC78BA3` on both.
+No independent RPC operator is known for 46630, so the cross-check that mainnet
+performs across two providers degrades to one provider here; quotes are labelled
+accordingly and are still read straight from the pool, never interpolated.
+
+Safety rules that do not change on testnet: execution still needs
+`VETTO_SWAP_EXECUTION` **and** `DATABASE_URL`, signing still happens in the
+wallet, and no capability is promoted that the registry does not already list.
+
+## LLM parser: which key goes in which variable
+
+There is no shared key and none can be handed out — a key is issued to your own
+provider account, and a made-up one is exactly what produces the HTTP 401 in the
+chat. Pick one provider, create the key there, then copy the three rows.
+
+| Provider | Where the key is created | `LLM_API_URL` | `LLM_MODEL` (pick one from the provider's list) |
+|---|---|---|---|
+| OpenAI | platform.openai.com → API keys | `https://api.openai.com/v1/chat/completions` | `gpt-4o-mini` |
+| Groq (free tier, no card) | console.groq.com → API keys | `https://api.groq.com/openai/v1/chat/completions` | `openai/gpt-oss-120b`, `qwen/qwen3.8-27b`, `llama-3.3-70b-versatile`* |
+| Google Gemini (free tier) | aistudio.google.com → Get API key | `https://generativelanguage.googleapis.com/v1beta/openai/chat/completions` | `gemini-2.5-flash` |
+| OpenRouter (has `:free` models) | openrouter.ai → Keys | `https://openrouter.ai/api/v1/chat/completions` | e.g. `meta-llama/llama-3.3-70b-instruct:free` |
+| Anything self-hosted / OpenAI-compatible | your server | `https://your-host/v1/chat/completions` | your model id |
+
+\* Model ids change; take the current one from the provider's model list rather than
+copying this table months later. `LLM_REASONING_EFFORT` is optional and off by
+default — some OpenAI-compatible providers reject the field, and a 400 is exactly
+what you get when they do.
+
+### Check the key before you paste it into Vercel
+
+```bash
+cd vetto
+LLM_API_KEY=sk-... \
+LLM_API_URL=https://api.groq.com/openai/v1/chat/completions \
+LLM_MODEL=openai/gpt-oss-120b \
+./scripts/check-llm.sh
+```
+
+`✓ Key works. … JSON mode: ok · parsed kind: swap` means all three values agree.
+The script sends the same request shape the app sends, never prints the key, and
+maps the usual failures: 401 = wrong/revoked key, 404 = wrong URL or model,
+400 = unsupported field or model id, 429 = rate limited (the key is fine).
+
+If you have no key, leave `LLM_API_KEY` unset. The deterministic parser handles
+swaps, link checks and capped agent tasks, and no warning appears at all.

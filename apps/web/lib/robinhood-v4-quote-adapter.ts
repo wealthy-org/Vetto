@@ -14,6 +14,11 @@ import {
   V4_QUOTER_QUOTE_ABI,
   type PoolVenue,
 } from "./robinhood-chain";
+import { serverProfile, type ProfileAsset } from "./chain-profile";
+
+function profileAssets(): readonly ProfileAsset[] {
+  return serverProfile().assets;
+}
 import { fingerprintQuote } from "./quote-fingerprint";
 
 /**
@@ -28,10 +33,25 @@ import { fingerprintQuote } from "./quote-fingerprint";
  * (see swapExecutionEnabled) — a quote can be live and still not be executable.
  */
 
-const SUPPORTED_PAIRS = new Set(["ETH/USDG", "USDG/ETH"]);
+/**
+ * Pairs come from the active chain profile's registered pools, not from a
+ * hardcoded list: mainnet quotes ETH/USDG, testnet quotes ETH/HUNT and
+ * ETH/DUCK, and neither can quote a pair it has no pool for.
+ */
+const SUPPORTED_PAIRS = new Set(
+  POOL_VENUES.flatMap((venue) => {
+    const symbol = assetSymbolFor(venue.poolKey.currency1);
+    return symbol ? [`ETH/${symbol}`, `${symbol}/ETH`] : [];
+  }),
+);
 
 /** Reference trade used to derive a spot-ish rate from real quotes (10 bps of size). */
 const REFERENCE_DIVISOR = 1000n;
+
+function assetSymbolFor(address: string): string | undefined {
+  const target = address.toLowerCase();
+  return profileAssets().find((asset) => asset.address !== "native" && asset.address.toLowerCase() === target)?.symbol;
+}
 
 function isSupportedPair(tokenIn: string, tokenOut: string): boolean {
   const a = tokenIn.toUpperCase();
@@ -126,17 +146,26 @@ export const robinhoodV4QuoteAdapter: QuoteAdapter = {
     }
 
     const zeroForOne = req.tokenIn.toUpperCase() === "ETH";
-    const tokenInSymbol = zeroForOne ? "ETH" : "USDG";
-    const tokenOutSymbol = zeroForOne ? "USDG" : "ETH";
-    const tokenInAddress = zeroForOne ? NATIVE_ETH.address : USDG.address;
-    const tokenOutAddress = zeroForOne ? USDG.address : NATIVE_ETH.address;
+    // The non-ETH leg is whichever asset this chain profile registers pools for.
+    const otherSymbol = req.tokenIn.toUpperCase() === "ETH" ? req.tokenOut : req.tokenIn;
+    const otherAddress = USDG.address;
+    const tokenInSymbol = zeroForOne ? "ETH" : otherSymbol;
+    const tokenOutSymbol = zeroForOne ? otherSymbol : "ETH";
+    const tokenInAddress = zeroForOne ? NATIVE_ETH.address : otherAddress;
+    const tokenOutAddress = zeroForOne ? otherAddress : NATIVE_ETH.address;
+
+    // Only pools for *this* pair: on a chain with several tokens a venue for a
+    // different currency1 is a different trade, not an alternative route.
+    const venues = POOL_VENUES.filter(
+      (venue) => assetSymbolFor(venue.poolKey.currency1) === otherSymbol,
+    );
 
     const { primary } = rpcUrls();
     const client = rpcClient(primary, 8000);
     const started = Date.now();
 
     const settled = await Promise.allSettled(
-      POOL_VENUES.map((venue) => quoteVenue(client, venue, zeroForOne, amountIn)),
+      venues.map((venue) => quoteVenue(client, venue, zeroForOne, amountIn)),
     );
 
     if (signal.aborted) return [];

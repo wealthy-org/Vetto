@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
+import { networkLabel } from "@/lib/chain-label";
 import { shortAddress, walletLabel } from "@/lib/wallet-display";
 
 interface WalletSession {
@@ -144,7 +145,7 @@ export function AccountMenu() {
           <dl className="mt-3 space-y-1 border-t border-white/10 pt-2 text-[11px]">
             <div className="flex justify-between gap-2">
               <dt className="text-white/40">Network</dt>
-              <dd className="font-medium">Robinhood Chain · 4663</dd>
+              <dd className="font-medium">{networkLabel()}</dd>
             </div>
             <div className="flex justify-between gap-2">
               <dt className="text-white/40">Custody</dt>

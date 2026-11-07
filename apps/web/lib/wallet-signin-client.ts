@@ -1,6 +1,7 @@
 "use client";
 
 import { WALLET_AUTH_CHAIN_ID } from "./auth-constants";
+import { networkLabel } from "./chain-label";
 import {
   ensureRobinhoodChain,
   getInjectedProvider,
@@ -71,7 +72,7 @@ async function signInWithProvider(
 
   const chain = (await provider.request({ method: "eth_chainId" })) as string;
   if (typeof chain !== "string" || Number.parseInt(chain, 16) !== WALLET_AUTH_CHAIN_ID) {
-    throw new Error("VETTO signs in on Robinhood Chain (4663) only.");
+    throw new Error(`VETTO signs in on ${networkLabel()} only.`);
   }
 
   progress("Requesting a sign-in challenge…");

@@ -4,6 +4,7 @@ import { getPool } from "@/lib/db";
 import { guardJson, isRecord, jsonError, jsonOk } from "@/lib/http";
 import { validateIntent, IntentValidationError, parseDecimal } from "@vetto/intent-parser";
 import { findAsset } from "@vetto/asset-registry";
+import { ROBINHOOD_CHAIN_ID } from "@/lib/robinhood-chain";
 import { simulateRobinhoodV4Swap } from "@/lib/robinhood-v4-simulator";
 
 export const runtime = "nodejs";
@@ -60,7 +61,7 @@ export async function POST(request: Request) {
       `select address, chain_id
       from wallet_identities
       where user_id = $1
-        and chain_id = '4663'
+        and chain_id = '${ROBINHOOD_CHAIN_ID}'
       order by last_seen_at desc
       limit 1`,
       [userId],
@@ -69,7 +70,7 @@ export async function POST(request: Request) {
     const linked = wallet.rows[0];
     if (!linked) return jsonError(404, "No linked wallet was found.");
 
-    if (Number(linked.chain_id) !== 4663) {
+    if (Number(linked.chain_id) !== ROBINHOOD_CHAIN_ID) {
       return jsonError(422, "Wallet is not linked to Robinhood Chain.");
     }
 

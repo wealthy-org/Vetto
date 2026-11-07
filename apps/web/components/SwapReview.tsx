@@ -4,6 +4,7 @@ import { findAsset } from "@vetto/asset-registry";
 import { formatUnits, type Intent } from "@vetto/intent-parser";
 import type { QuoteResult, RouteQuote } from "@vetto/quote-engine";
 import { formatAmount } from "@/lib/format";
+import { isTestnetDeployment, networkLabel, TESTNET_DISCLOSURE } from "@/lib/chain-label";
 import { getConnectedWallet } from "@/lib/walletconnect-provider";
 
 /**
@@ -65,6 +66,14 @@ type ExecutionView = {
   note?: string | null;
 };
 
+/** Chain display comes from the server page so the review can never label a
+ *  different chain than the one the API will simulate on. */
+export interface ChainDisplay {
+  label: string;
+  short: string;
+  testnet: boolean;
+}
+
 interface Props {
   intent: Extract<Intent, { kind: "swap" }>;
   quote: QuoteResult | undefined;
@@ -72,6 +81,7 @@ interface Props {
   selectedPath: string | null;
   onSelectPath: (executionPathId: string) => void;
   onRecorded?: () => void;
+  chain?: ChainDisplay;
 }
 
 const short = (value: string, head = 6, tail = 4) =>
@@ -107,7 +117,20 @@ function amount(
   }
 }
 
-export function SwapReview({ intent, quote, label, selectedPath, onSelectPath, onRecorded }: Props) {
+export function SwapReview({
+  intent,
+  quote,
+  label,
+  selectedPath,
+  onSelectPath,
+  onRecorded,
+  chain,
+}: Props) {
+  const chainView: ChainDisplay = chain ?? {
+    label: networkLabel(),
+    short: networkLabel(),
+    testnet: isTestnetDeployment(),
+  };
   const out = findAsset(intent.tokenOut);
   const tin = findAsset(intent.tokenIn);
 
@@ -376,7 +399,8 @@ export function SwapReview({ intent, quote, label, selectedPath, onSelectPath, o
             <Row k="Pool fee" v={poolFeeText} dim={selected.venueFeeBps === undefined} />
             <Row k="Price impact" v={impactText} dim={selected.priceImpactBps === undefined} />
             <Row k="Network fee (gas)" v={gasText} dim={!selected.gasCostWei} />
-            <Row k="Network" v="Robinhood Chain · 4663" />
+            <Row k="Network" v={chainView.label} />
+            {chainView.testnet && <Row k="Funds" v="Testnet only — no real value" />}
             <Row k="Via" v={`Uniswap v4 · ${routes.length > 0 ? "1 pool" : "—"}`} />
             <Row k="Visibility" v="Public mempool" />
             <Row
