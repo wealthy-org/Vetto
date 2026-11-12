@@ -283,7 +283,11 @@ export async function POST(request: Request) {
               "This token needs a Permit2 approval before the swap can be built. " +
               "Nothing was sent.",
             code: "APPROVAL_REQUIRED",
-            approval: planApprovals(snapshot),
+            // The plan carries bigints; the stored idempotent response is JSON, so
+            // send them as decimal strings (the browser treats them as strings).
+            approval: JSON.parse(
+              JSON.stringify(planApprovals(snapshot), (_k, v) => (typeof v === "bigint" ? v.toString() : v)),
+            ),
           },
           "approval-required",
         );
