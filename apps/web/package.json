@@ -13,7 +13,8 @@
     "discover:pools": "node --env-file=.env.local scripts/discover-pools.mjs",
     "simulate:router": "node --env-file=.env.local scripts/simulate-router-v4.mjs",
     "db:migrate": "node --env-file=.env.local scripts/migrate.mjs",
-    "verify:quote": "node --env-file=.env.local scripts/verify-dual-rpc-quote.mjs"
+    "verify:quote": "node --env-file=.env.local scripts/verify-dual-rpc-quote.mjs",
+    "showcase:mainnet": "node scripts/mainnet-showcase.cjs"
   },
   "dependencies": {
     "@vetto/asset-registry": "workspace:*",
