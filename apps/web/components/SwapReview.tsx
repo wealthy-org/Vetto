@@ -1,5 +1,6 @@
 "use client";
 import { useMemo, useState } from "react";
+import { MAINNET_EXPLORER, TxProofModal, type TxProof } from "./TxProofModal";
 import { findAsset } from "@vetto/asset-registry";
 import { formatUnits, type Intent } from "@vetto/intent-parser";
 import type { QuoteResult, RouteQuote } from "@vetto/quote-engine";
@@ -75,6 +76,7 @@ export interface ChainDisplay {
   label: string;
   short: string;
   testnet: boolean;
+  explorer?: string;
 }
 
 interface Props {
@@ -152,6 +154,8 @@ export function SwapReview({
   const [confirmedReview, setConfirmedReview] = useState(false);
   const [approvals, setApprovals] = useState<ApprovalStep[]>([]);
   const [approvalHashes, setApprovalHashes] = useState<string[]>([]);
+  const [proof, setProof] = useState<TxProof | null>(null);
+  const explorer = chainView.explorer ?? MAINNET_EXPLORER;
 
   const index = selected ? routes.findIndex((route) => route.quoteId === selected.quoteId) + 1 : 0;
   const bestOut = routes.reduce<bigint>((max, route) => {
@@ -354,7 +358,19 @@ export function SwapReview({
         const body = (await response.json()) as { execution?: ExecutionView; note?: string };
         if (body.execution) {
           setExecution({ ...body.execution, note: body.note });
-          if (body.execution.status === "confirmed" || body.execution.status === "reverted") {
+          const final = body.execution;
+          if ((final.status === "confirmed" || final.status === "reverted") && final.txHash) {
+            setProof({
+              status: final.status,
+              txHash: final.txHash,
+              sent: `${intent.amountIn} ${intent.tokenIn}`,
+              receivedAtLeast: amount(final.minOutBaseUnits, out?.symbol, out?.decimals),
+              network: chainView.label,
+              gasUsed: final.gasUsed,
+              explorer,
+            });
+          }
+          if (final.status === "confirmed" || final.status === "reverted") {
             onRecorded?.();
             return;
           }
@@ -374,6 +390,7 @@ export function SwapReview({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
+      <TxProofModal proof={proof} onClose={() => setProof(null)} />
       <h2 className="text-[11px] text-white/40">Route review</h2>
 
       {!selected ? (
@@ -479,7 +496,7 @@ export function SwapReview({
               {execution.txHash && (
                 <a
                   className="mt-1.5 inline-block underline"
-                  href={`https://robinhoodchain.blockscout.com/tx/${execution.txHash}`}
+                  href={`${explorer}/tx/${execution.txHash}`}
                   target="_blank"
                   rel="noopener noreferrer"
                 >

@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { MAINNET_EXPLORER, PREVIEW_PROOF, TxProofModal } from "./TxProofModal";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { english } from "viem/accounts";
 import { findAsset, listAssets } from "@vetto/asset-registry";
@@ -97,6 +98,7 @@ export interface ChainDisplay {
   label: string;
   short: string;
   testnet: boolean;
+  explorer?: string;
 }
 
 export function ChatApp({ chain }: { chain?: ChainDisplay } = {}) {
@@ -106,6 +108,10 @@ export function ChatApp({ chain }: { chain?: ChainDisplay } = {}) {
     testnet: isTestnetDeployment(),
   };
   const params = useSearchParams();
+  // Local-only preview of the post-swap proof popup (no env needed): /app?txProofPreview=1
+  const [previewProof, setPreviewProof] = useState(
+    () => process.env.NODE_ENV === "development" && params.get("txProofPreview") === "1",
+  );
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -608,7 +614,7 @@ export function ChatApp({ chain }: { chain?: ChainDisplay } = {}) {
             />
           </div>
 
-          <TransactionsList items={transactions} />
+          <TransactionsList items={transactions} explorer={chainView.explorer ?? MAINNET_EXPLORER} />
         </aside>
 
         {/* CENTER — stage, suggestions, composer */}
@@ -773,6 +779,8 @@ export function ChatApp({ chain }: { chain?: ChainDisplay } = {}) {
         </aside>
       </div>
 
+      <TxProofModal proof={previewProof ? PREVIEW_PROOF : null} onClose={() => setPreviewProof(false)} />
+
       {/* mobile history drawer */}
       {historyOpen && (
         <div
@@ -812,7 +820,7 @@ export function ChatApp({ chain }: { chain?: ChainDisplay } = {}) {
               onClear={confirmClearSavedHistory}
               onNewChat={startNewChat}
             />
-            <TransactionsList items={transactions} />
+            <TransactionsList items={transactions} explorer={chainView.explorer ?? MAINNET_EXPLORER} />
           </aside>
         </div>
       )}
@@ -843,7 +851,7 @@ function StageBubble({ text, busy }: { text: string | undefined; busy: boolean }
   );
 }
 
-function TransactionsList({ items }: { items: TxItem[] }) {
+function TransactionsList({ items, explorer }: { items: TxItem[]; explorer: string }) {
   return (
     <div className="mt-6">
       <h2 className="mb-2 text-[11px] text-white/40">Transactions</h2>
@@ -878,7 +886,7 @@ function TransactionsList({ items }: { items: TxItem[] }) {
                 {item.txHash && (
                   <a
                     className="mt-1 inline-block text-lilac underline"
-                    href={`https://robinhoodchain.blockscout.com/tx/${item.txHash}`}
+                    href={`${explorer}/tx/${item.txHash}`}
                     target="_blank"
                     rel="noopener noreferrer"
                   >

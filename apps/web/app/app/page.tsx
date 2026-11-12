@@ -18,6 +18,7 @@ export default function Page() {
           label: `${profile.name} · ${profile.chainId}`,
           short: profile.name,
           testnet: profile.isTestnet,
+          explorer: profile.explorer,
         }}
       />
     </Suspense>
