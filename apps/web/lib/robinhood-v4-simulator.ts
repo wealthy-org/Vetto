@@ -310,7 +310,11 @@ export async function simulateRobinhoodV4Swap(
   }
 
   const expectedOut = primaryQuote.expectedOut;
-  const minOut = (expectedOut * BigInt(10_000 - input.slippageBps)) / 10_000n;
+  // The slippage band exists to absorb small moves between review and simulation, so
+  // the fresh *expected* output only has to clear what the person reviewed — and the
+  // transaction then enforces exactly that reviewed minimum on chain.
+  const freshMinOut = (expectedOut * BigInt(10_000 - input.slippageBps)) / 10_000n;
+  const minOut = reviewedMinOut ?? freshMinOut;
 
   const [gasPrice, nativeBalance, tokenBalance] = await Promise.all([
     primary.getGasPrice(),
@@ -345,7 +349,7 @@ export async function simulateRobinhoodV4Swap(
   };
 
   // The reviewed minimum must still be reachable with the fresh quote.
-  if (reviewedMinOut !== null && minOut < reviewedMinOut) {
+  if (reviewedMinOut !== null && expectedOut < reviewedMinOut) {
     return {
       ...baseResult,
       status: "failed",
