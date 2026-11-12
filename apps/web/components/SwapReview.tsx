@@ -247,11 +247,13 @@ export function SwapReview({
     setBusy("signing");
     setError("");
     const hashes: string[] = [];
+    let walletProvider: Awaited<ReturnType<typeof resolveSendProvider>>["provider"] | null = null;
 
     try {
       // Use the wallet that was signed in with and holds this address — not an
       // unconditional WalletConnect modal.
       const { provider, address } = await resolveSendProvider(prepared?.wallet ?? "");
+      walletProvider = provider;
 
       for (const step of approvals) {
         const hash = await provider.request<string>({
@@ -280,6 +282,35 @@ export function SwapReview({
       setBusy(null);
     }
 
+    // Read each approval's receipt from the chain, then show the proof.
+    if (walletProvider && hashes.length) {
+      setBusy("recording");
+      const receipts = await waitForApprovalReceipts(walletProvider, hashes);
+      setBusy(null);
+      if (receipts) {
+        const reverted = receipts.some((r) => r.status !== "0x1");
+        setProof({
+          status: reverted ? "reverted" : "confirmed",
+          title: reverted ? "Token approval reverted" : "Token approval confirmed",
+          subtitle: reverted
+            ? "The chain receipt shows a revert. The swap cannot run until the approval lands."
+            : "Status read from the chain receipt. Next: simulate and execute the swap.",
+          rows: [
+            ["Token", `${intent.amountIn} ${intent.tokenIn}`],
+            ["Approved for", "Permit2 → Uniswap Universal Router"],
+            ["Network", chainView.label],
+          ],
+          txs: receipts.map((r, i) => ({
+            label: approvals[i]?.purpose === "permit2-approve-router" ? "Permit2" : "Approve",
+            hash: hashes[i]!,
+            gasUsed: r.gasUsed ? BigInt(r.gasUsed).toString() : null,
+          })),
+          explorer,
+        });
+        if (reverted) return;
+      }
+    }
+
     // Approvals are on the way; ask the server to re-simulate until the chain agrees.
     setBusy("preparing");
     try {
@@ -291,6 +322,31 @@ export function SwapReview({
     } finally {
       setBusy(null);
     }
+  }
+
+  /** Polls the wallet's RPC for each approval receipt (up to ~2 min). Null on timeout. */
+  async function waitForApprovalReceipts(
+    provider: { request<T>(args: { method: string; params?: unknown[] }): Promise<T> },
+    hashes: string[],
+  ): Promise<{ status: string; gasUsed?: string }[] | null> {
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < 120_000) {
+      try {
+        const receipts = await Promise.all(
+          hashes.map((hash) =>
+            provider.request<{ status: string; gasUsed?: string } | null>({
+              method: "eth_getTransactionReceipt",
+              params: [hash],
+            }),
+          ),
+        );
+        if (receipts.every(Boolean)) return receipts as { status: string; gasUsed?: string }[];
+      } catch {
+        /* keep polling */
+      }
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+    }
+    return null;
   }
 
   async function signAndSend() {
@@ -360,13 +416,19 @@ export function SwapReview({
           setExecution({ ...body.execution, note: body.note });
           const final = body.execution;
           if ((final.status === "confirmed" || final.status === "reverted") && final.txHash) {
+            const ok = final.status === "confirmed";
             setProof({
               status: final.status,
-              txHash: final.txHash,
-              sent: `${intent.amountIn} ${intent.tokenIn}`,
-              receivedAtLeast: amount(final.minOutBaseUnits, out?.symbol, out?.decimals),
-              network: chainView.label,
-              gasUsed: final.gasUsed,
+              title: ok ? "Swap confirmed on Robinhood Chain" : "Swap reverted",
+              subtitle: ok
+                ? "Status read from the chain receipt, not from the app."
+                : "The chain receipt shows a revert. No swap output was received.",
+              rows: [
+                ["You sent", `${intent.amountIn} ${intent.tokenIn}`],
+                ...(ok ? [["Received at least", amount(final.minOutBaseUnits, out?.symbol, out?.decimals)] as [string, string]] : []),
+                ["Network", chainView.label],
+              ],
+              txs: [{ label: "Swap", hash: final.txHash, gasUsed: final.gasUsed }],
               explorer,
             });
           }
@@ -566,7 +628,7 @@ export function SwapReview({
                 >
                   {busy === "signing"
                     ? "Confirm in your wallet…"
-                    : busy === "preparing"
+                    : busy === "preparing" || busy === "recording"
                       ? "Waiting for the approval to land…"
                       : approvalHashes.length > 0
                         ? "Approve next step"

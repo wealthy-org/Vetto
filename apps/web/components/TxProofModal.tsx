@@ -3,13 +3,23 @@ import { useEffect, useRef, useState } from "react";
 
 export const MAINNET_EXPLORER = "https://robinhoodchain.blockscout.com";
 
+export interface ProofTx {
+  label: string;
+  hash: string;
+  gasUsed?: string | null;
+}
+
+/**
+ * Proof shown after a transaction's chain receipt lands (swap or token approval).
+ * Every value must come from the receipt or from what the wallet was asked to sign.
+ */
 export interface TxProof {
   status: "confirmed" | "reverted";
-  txHash: string;
-  sent: string;
-  receivedAtLeast: string;
-  network: string;
-  gasUsed: string | null;
+  title: string;
+  subtitle: string;
+  rows: [string, string][];
+  /** One or more transactions; the last one is the main explorer button. */
+  txs: ProofTx[];
   explorer: string;
   /** Shown when the modal is a local preview of an older mainnet tx. */
   note?: string;
@@ -18,21 +28,49 @@ export interface TxProof {
 /** Real mainnet swap used only by the local dev preview (`/app?txProofPreview=1`). */
 export const PREVIEW_PROOF: TxProof = {
   status: "confirmed",
-  txHash: "0xa8a93274c967949d5ded0104e8bc09854b1fd707c3bc8881698de6362eb1a4fc",
-  sent: "0.0005 ETH",
-  receivedAtLeast: "USDG (see explorer)",
-  network: "Robinhood Chain · 4663",
-  gasUsed: "134791",
+  title: "Swap confirmed on Robinhood Chain",
+  subtitle: "Status read from the chain receipt, not from the app.",
+  rows: [
+    ["You sent", "0.0005 ETH"],
+    ["Received", "USDG (see explorer)"],
+    ["Network", "Robinhood Chain · 4663"],
+  ],
+  txs: [{ label: "Swap", hash: "0xa8a93274c967949d5ded0104e8bc09854b1fd707c3bc8881698de6362eb1a4fc", gasUsed: "134791" }],
   explorer: MAINNET_EXPLORER,
   note: "Dev preview: an earlier mainnet swap, shown to test this popup locally.",
 };
 
 const short = (v: string) => `${v.slice(0, 10)}…${v.slice(-8)}`;
 
-/** Post-swap proof: only values taken from the chain receipt, plus the explorer link. */
+function TxRow({ tx, explorer }: { tx: ProofTx; explorer: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(tx.hash);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    } catch {}
+  };
+  return (
+    <div className="border-t border-white/[.06] py-[7px]">
+      <div className="flex items-center justify-between gap-3">
+        <dt className="text-white/45">{tx.label} tx</dt>
+        <dd className="flex items-center gap-2">
+          <a href={`${explorer}/tx/${tx.hash}`} target="_blank" rel="noopener noreferrer" className="font-mono text-[11px] text-white/85 underline decoration-white/25 hover:text-white">
+            {short(tx.hash)}
+          </a>
+          <button type="button" onClick={copy} className="text-[11px] text-lilac hover:text-white">
+            {copied ? "Copied" : "Copy"}
+          </button>
+        </dd>
+      </div>
+      {tx.gasUsed && <p className="mt-0.5 text-right text-[11px] text-white/35">gas used {tx.gasUsed}</p>}
+    </div>
+  );
+}
+
 export function TxProofModal({ proof, onClose }: { proof: TxProof | null; onClose: () => void }) {
   const primary = useRef<HTMLAnchorElement>(null);
-  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (!proof) return;
@@ -42,17 +80,9 @@ export function TxProofModal({ proof, onClose }: { proof: TxProof | null; onClos
     return () => window.removeEventListener("keydown", onKey);
   }, [proof, onClose]);
 
-  if (!proof) return null;
+  if (!proof || !proof.txs.length) return null;
   const ok = proof.status === "confirmed";
-  const url = `${proof.explorer}/tx/${proof.txHash}`;
-
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(proof.txHash);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1600);
-    } catch {}
-  };
+  const main = proof.txs[proof.txs.length - 1]!;
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/65 p-4 backdrop-blur-sm" role="presentation" onClick={onClose}>
@@ -71,41 +101,26 @@ export function TxProofModal({ proof, onClose }: { proof: TxProof | null; onClos
           )}
         </div>
 
-        <h2 id="tx-proof-title" className="mt-3 text-center text-[17px] font-semibold text-white">
-          {ok ? "Swap confirmed on Robinhood Chain" : "Transaction reverted"}
-        </h2>
-        <p className="mt-1 text-center text-[12px] text-white/50">
-          {ok ? "Status read from the chain receipt, not from the app." : "The chain receipt shows a revert. No swap output was received."}
-        </p>
+        <h2 id="tx-proof-title" className="mt-3 text-center text-[17px] font-semibold text-white">{proof.title}</h2>
+        <p className="mt-1 text-center text-[12px] text-white/50">{proof.subtitle}</p>
 
         <dl className="mt-4 text-[12.5px]">
-          {[
-            ["You sent", proof.sent],
-            ...(ok ? [["Received at least", proof.receivedAtLeast]] : []),
-            ["Network", proof.network],
-            ...(proof.gasUsed ? [["Gas used", proof.gasUsed]] : []),
-          ].map(([k, v]) => (
+          {proof.rows.map(([k, v]) => (
             <div key={k} className="flex justify-between gap-3 border-t border-white/[.06] py-[7px]">
               <dt className="text-white/45">{k}</dt>
               <dd className="text-right text-white/85">{v}</dd>
             </div>
           ))}
-          <div className="flex items-center justify-between gap-3 border-t border-white/[.06] py-[7px]">
-            <dt className="text-white/45">Tx hash</dt>
-            <dd className="flex items-center gap-2">
-              <span className="font-mono text-[11px] text-white/85">{short(proof.txHash)}</span>
-              <button type="button" onClick={copy} className="text-[11px] text-lilac hover:text-white">
-                {copied ? "Copied" : "Copy"}
-              </button>
-            </dd>
-          </div>
+          {proof.txs.map((tx) => (
+            <TxRow key={tx.hash} tx={tx} explorer={proof.explorer} />
+          ))}
         </dl>
 
         {proof.note && <p className="mt-2 text-[11px] text-peach/80">{proof.note}</p>}
 
         <a
           ref={primary}
-          href={url}
+          href={`${proof.explorer}/tx/${main.hash}`}
           target="_blank"
           rel="noopener noreferrer"
           className="btn btn-primary mt-4 w-full justify-center"
