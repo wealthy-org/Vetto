@@ -56,7 +56,7 @@ type ApprovalStep = {
 
 type ApprovalPlan = {
   satisfied: boolean;
-  snapshot: { required: string; tokenToPermit2: string; permit2ToRouter: string };
+  snapshot: { owner: string; required: string; tokenToPermit2: string; permit2ToRouter: string };
   steps: ApprovalStep[];
 };
 
@@ -154,6 +154,8 @@ export function SwapReview({
   const [confirmedReview, setConfirmedReview] = useState(false);
   const [approvals, setApprovals] = useState<ApprovalStep[]>([]);
   const [approvalHashes, setApprovalHashes] = useState<string[]>([]);
+  /** Wallet the approval plan was built for (there is no prepared swap yet at that point). */
+  const [approvalOwner, setApprovalOwner] = useState("");
   const [proof, setProof] = useState<TxProof | null>(null);
   const explorer = chainView.explorer ?? MAINNET_EXPLORER;
 
@@ -218,6 +220,7 @@ export function SwapReview({
         if (body.code === "APPROVAL_REQUIRED" && body.approval?.steps?.length) {
           // Not a dead end: the wallet signs these separately, then we prepare again.
           setApprovals(body.approval.steps);
+          setApprovalOwner(body.approval.snapshot.owner);
           setApprovalHashes([]);
           setError("");
           return "approval";
@@ -252,7 +255,7 @@ export function SwapReview({
     try {
       // Use the wallet that was signed in with and holds this address — not an
       // unconditional WalletConnect modal.
-      const { provider, address } = await resolveSendProvider(prepared?.wallet ?? "");
+      const { provider, address } = await resolveSendProvider(approvalOwner || prepared?.wallet || "");
       walletProvider = provider;
 
       for (const step of approvals) {
@@ -604,12 +607,12 @@ export function SwapReview({
                 </p>
                 <dl className="mt-2 space-y-0.5 text-[10px] text-white/45">
                   <div className="flex justify-between gap-3">
-                    <dt>Contract</dt>
-                    <dd className="font-mono text-white/60">{approvals[approvalHashes.length]?.to}</dd>
+                    <dt className="shrink-0">Contract</dt>
+                    <dd className="min-w-0 break-all text-right font-mono text-white/60">{approvals[approvalHashes.length]?.to}</dd>
                   </div>
                   <div className="flex justify-between gap-3">
-                    <dt>Call</dt>
-                    <dd className="text-right font-mono text-white/60">
+                    <dt className="shrink-0">Call</dt>
+                    <dd className="min-w-0 break-words text-right font-mono text-white/60">
                       {approvals[approvalHashes.length]?.call.method}
                     </dd>
                   </div>
