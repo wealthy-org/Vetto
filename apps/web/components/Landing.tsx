@@ -10,6 +10,7 @@ import { IconX } from "./icons";
 import { TextLensBackground, type LensControl } from "./TextLensBackground";
 import { IconArrow } from "./icons";
 import { Cta } from "./landing/Cta";
+import { ContractAddress } from "./landing/ContractAddress";
 import { Security } from "./landing/Security";
 import { Showcase } from "./landing/Showcase";
 import { Status } from "./landing/Status";
@@ -134,6 +135,9 @@ export function Landing() {
                   <div data-hero-fade className="hero-in mt-8 flex items-center justify-center gap-3" style={{ "--d": "0.85s" } as React.CSSProperties}>
                     <Link href="/sign-in" className="btn btn-primary">Launch app <IconArrow className="h-4 w-4" /></Link>
                     <a href="#meet" className="btn btn-ghost bg-ink/60 backdrop-blur">See what he does</a>
+                  </div>
+                  <div data-hero-fade className="hero-in mt-5 flex justify-center" style={{ "--d": "0.95s" } as React.CSSProperties}>
+                    <ContractAddress />
                   </div>
                 </div>
               </div>
